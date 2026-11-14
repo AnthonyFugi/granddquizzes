@@ -1,0 +1,12 @@
+[
+  { "slug": "general-knowledge", "name": "General Knowledge", "icon": "🧠", "order": 1, "description": "Everyday facts everyone should know." },
+  { "slug": "current-affairs", "name": "Current Affairs & World", "icon": "📰", "order": 2, "description": "Organisations, events and headlines from Africa and the world." },
+  { "slug": "geography", "name": "Geography", "icon": "🌍", "order": 3, "description": "Countries, capitals, rivers, mountains and maps." },
+  { "slug": "history", "name": "History", "icon": "🏛️", "order": 4, "description": "People and events that shaped Africa and the world." },
+  { "slug": "science-nature", "name": "Science & Nature", "icon": "🔬", "order": 5, "description": "The human body, animals, space and how things work." },
+  { "slug": "sports", "name": "Sports", "icon": "⚽", "order": 6, "description": "Football, athletics, the Olympics and more." },
+  { "slug": "music-entertainment", "name": "Music & Entertainment", "icon": "🎬", "order": 7, "description": "Music, film, books and the arts, with an African flavour." },
+  { "slug": "zambian-culture", "name": "Zambian Culture & Trivia", "icon": "🇿🇲", "order": 8, "description": "Zambia's people, places, ceremonies and history." },
+  { "slug": "riddles-logic", "name": "Riddles & Logic", "icon": "🧩", "order": 9, "description": "Brain teasers, patterns and tricky thinking." },
+  { "slug": "common-sense", "name": "Common Sense & Everyday Life", "icon": "💡", "order": 10, "description": "Safety, health, money and practical good judgement." }
+]

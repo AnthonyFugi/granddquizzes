@@ -1,0 +1,410 @@
+import { randomUUID } from 'node:crypto';
+import { pointsFor } from './scoring.js';
+import { UserError } from './errors.js';
+
+const clean = (s, max) => String(s ?? '').replace(/\s+/g, ' ').trim().slice(0, max);
+
+/**
+ * One live quiz. Holds players, teams, the current question and scores in memory.
+ * Status flow: lobby -> question -> (locked) -> reveal -> question ... -> ended
+ */
+export class GameSession {
+  constructor({ code, eventId, title, prizes = [], questions, timeLimit = 20, maxTeamSize = 10 }) {
+    this.code = code;
+    this.eventId = eventId;
+    this.title = title;
+    this.prizes = prizes;
+    this.questions = questions;
+    this.timeLimit = timeLimit;
+    this.maxTeamSize = maxTeamSize;
+
+    this.status = 'lobby';
+    this.players = new Map(); // playerId -> { id, nickname, socketId, connected, teamId, score }
+    this.teams = new Map(); // teamId -> { id, name, leaderId, memberIds:Set, score }
+    this.index = -1;
+    this.answers = new Map(); // entityKey -> { choice, elapsedMs, by }
+    this.results = new Map(); // entityKey -> { answered, correct, points, choice }
+    this.tally = null;
+    this.startedAt = null;
+    this.endsAt = null;
+    this.timer = null;
+    this.hostSocketId = null;
+    this.touchedAt = Date.now();
+    this.endedAt = null;
+    this.finalStandings = null;
+    this.onChange = () => {};
+  }
+
+  touch() {
+    this.touchedAt = Date.now();
+  }
+
+  destroy() {
+    clearTimeout(this.timer);
+    this.timer = null;
+  }
+
+  get question() {
+    return this.questions[this.index] || null;
+  }
+
+  // ---------- players ----------
+  mustPlayer(playerId) {
+    const p = this.players.get(playerId);
+    if (!p) throw new UserError('Player not found. Rejoin the quiz.');
+    return p;
+  }
+
+  join({ nickname, playerId, socketId }) {
+    this.touch();
+    if (playerId && this.players.has(playerId)) {
+      const p = this.players.get(playerId);
+      p.socketId = socketId;
+      p.connected = true;
+      return p;
+    }
+    if (this.status === 'ended') throw new UserError('This quiz has ended');
+    const name = clean(nickname, 20);
+    if (name.length < 2) throw new UserError('Pick a nickname with at least 2 characters');
+    for (const p of this.players.values()) {
+      if (p.nickname.toLowerCase() === name.toLowerCase()) {
+        throw new UserError('That nickname is taken. Try another one');
+      }
+    }
+    const p = { id: randomUUID(), nickname: name, socketId, connected: true, teamId: null, score: 0 };
+    this.players.set(p.id, p);
+    return p;
+  }
+
+  disconnect(socketId) {
+    for (const p of this.players.values()) {
+      if (p.socketId === socketId) {
+        p.connected = false;
+        p.socketId = null;
+        return p;
+      }
+    }
+    return null;
+  }
+
+  removePlayer(playerId) {
+    const p = this.players.get(playerId);
+    if (!p) return null;
+    if (p.teamId) this.detachFromTeam(p);
+    this.players.delete(playerId);
+    this.answers.delete(`p:${playerId}`);
+    return p;
+  }
+
+  // ---------- teams ----------
+  createTeam(playerId, name) {
+    const p = this.mustPlayer(playerId);
+    if (this.status !== 'lobby') throw new UserError('Teams can only be created before the quiz starts');
+    if (p.teamId) throw new UserError('Leave your current team first');
+    const n = clean(name, 24);
+    if (n.length < 2) throw new UserError('Give your team a name (at least 2 characters)');
+    for (const t of this.teams.values()) {
+      if (t.name.toLowerCase() === n.toLowerCase()) throw new UserError('That team name is taken');
+    }
+    const team = { id: randomUUID().slice(0, 8), name: n, leaderId: p.id, memberIds: new Set([p.id]), score: 0 };
+    this.teams.set(team.id, team);
+    p.teamId = team.id;
+    this.touch();
+    return team;
+  }
+
+  joinTeam(playerId, teamId) {
+    const p = this.mustPlayer(playerId);
+    if (this.status !== 'lobby') throw new UserError('Teams are locked once the quiz starts');
+    if (p.teamId) throw new UserError('Leave your current team first');
+    const team = this.teams.get(teamId);
+    if (!team) throw new UserError('That team no longer exists');
+    if (team.memberIds.size >= this.maxTeamSize) throw new UserError('That team is full');
+    team.memberIds.add(p.id);
+    p.teamId = team.id;
+    this.touch();
+    return team;
+  }
+
+  leaveTeam(playerId) {
+    const p = this.mustPlayer(playerId);
+    if (this.status !== 'lobby') throw new UserError('Teams are locked once the quiz starts');
+    if (!p.teamId) return;
+    this.detachFromTeam(p);
+    this.touch();
+  }
+
+  detachFromTeam(p) {
+    const team = this.teams.get(p.teamId);
+    p.teamId = null;
+    if (!team) return;
+    team.memberIds.delete(p.id);
+    if (team.memberIds.size === 0) {
+      this.teams.delete(team.id);
+      this.answers.delete(`t:${team.id}`);
+    } else if (team.leaderId === p.id) {
+      const members = [...team.memberIds].map((id) => this.players.get(id)).filter(Boolean);
+      const next = members.find((m) => m.connected) || members[0];
+      team.leaderId = next.id;
+    }
+  }
+
+  transferLeader(byPlayerId, newLeaderId) {
+    const by = this.mustPlayer(byPlayerId);
+    const team = by.teamId && this.teams.get(by.teamId);
+    if (!team || team.leaderId !== by.id) throw new UserError('Only the team leader can do that');
+    if (!team.memberIds.has(newLeaderId)) throw new UserError('That player is not in your team');
+    team.leaderId = newLeaderId;
+    this.touch();
+  }
+
+  // Any member can take over if the leader dropped off.
+  claimLeader(playerId) {
+    const p = this.mustPlayer(playerId);
+    const team = p.teamId && this.teams.get(p.teamId);
+    if (!team) throw new UserError('You are not in a team');
+    const leader = this.players.get(team.leaderId);
+    if (leader && leader.connected) throw new UserError('Your leader is still connected');
+    team.leaderId = p.id;
+    this.touch();
+  }
+
+  setLeaderByHost(teamId, playerId) {
+    const team = this.teams.get(teamId);
+    if (!team || !team.memberIds.has(playerId)) throw new UserError('That player is not in that team');
+    team.leaderId = playerId;
+    this.touch();
+  }
+
+  // ---------- question flow ----------
+  entityKeyOf(p) {
+    return p.teamId ? `t:${p.teamId}` : `p:${p.id}`;
+  }
+
+  holders() {
+    const list = [];
+    for (const t of this.teams.values()) list.push([`t:${t.id}`, t]);
+    for (const p of this.players.values()) if (!p.teamId) list.push([`p:${p.id}`, p]);
+    return list;
+  }
+
+  next() {
+    if (!['lobby', 'reveal'].includes(this.status)) throw new UserError('Finish the current question first');
+    if (this.players.size === 0) throw new UserError('Wait for at least one player to join');
+    if (this.index + 1 >= this.questions.length) {
+      throw new UserError('That was the last question. Finish the quiz to show the winners');
+    }
+    this.index += 1;
+    this.answers = new Map();
+    this.results = new Map();
+    this.tally = null;
+    this.startedAt = Date.now();
+    this.endsAt = this.startedAt + this.timeLimit * 1000;
+    this.status = 'question';
+    clearTimeout(this.timer);
+    this.timer = setTimeout(() => {
+      if (this.status === 'question') {
+        this.status = 'locked';
+        this.onChange();
+      }
+    }, this.timeLimit * 1000 + 50);
+    this.touch();
+  }
+
+  submit(playerId, choice) {
+    const p = this.mustPlayer(playerId);
+    const q = this.question;
+    if (this.status !== 'question' || !q) throw new UserError('No question is open right now');
+    if (Date.now() > this.endsAt + 400) throw new UserError('Time is up');
+    const c = Number(choice);
+    if (!Number.isInteger(c) || c < 0 || c >= q.options.length) throw new UserError('Pick one of the options');
+
+    let key;
+    if (p.teamId) {
+      const team = this.teams.get(p.teamId);
+      if (team.leaderId !== p.id) throw new UserError('Only your team leader can submit the answer');
+      key = `t:${team.id}`;
+    } else {
+      key = `p:${p.id}`;
+    }
+    if (this.answers.has(key)) throw new UserError('Answer already locked in');
+    this.answers.set(key, {
+      choice: c,
+      elapsedMs: Math.min(Date.now() - this.startedAt, this.timeLimit * 1000),
+      by: p.id,
+    });
+    this.touch();
+  }
+
+  expectedCount() {
+    let n = 0;
+    for (const [, holder] of this.holders()) {
+      const members = holder.memberIds ? [...holder.memberIds].map((id) => this.players.get(id)) : [holder];
+      if (members.some((m) => m && m.connected)) n += 1;
+    }
+    return n;
+  }
+
+  allAnswered() {
+    return this.status === 'question' && this.expectedCount() > 0 && this.answers.size >= this.expectedCount();
+  }
+
+  lock() {
+    if (this.status === 'question') {
+      clearTimeout(this.timer);
+      this.status = 'locked';
+    }
+  }
+
+  reveal() {
+    if (!['question', 'locked'].includes(this.status)) throw new UserError('There is no question to reveal');
+    clearTimeout(this.timer);
+    const q = this.question;
+    const tally = q.options.map(() => 0);
+    const limitMs = this.timeLimit * 1000;
+    this.results = new Map();
+    for (const [key, holder] of this.holders()) {
+      const a = this.answers.get(key);
+      if (!a) {
+        this.results.set(key, { answered: false, correct: false, points: 0, choice: null });
+        continue;
+      }
+      tally[a.choice] += 1;
+      const correct = a.choice === q.correctIndex;
+      const points = correct ? pointsFor(a.elapsedMs, limitMs) : 0;
+      holder.score += points;
+      this.results.set(key, { answered: true, correct, points, choice: a.choice });
+    }
+    this.tally = tally;
+    this.status = 'reveal';
+    this.touch();
+  }
+
+  end() {
+    if (this.status === 'ended') return;
+    clearTimeout(this.timer);
+    // If a question is still open, score it before finishing
+    if (['question', 'locked'].includes(this.status)) this.reveal();
+    this.status = 'ended';
+    this.endedAt = Date.now();
+    this.finalStandings = this.standings();
+    this.touch();
+  }
+
+  // ---------- views ----------
+  standings() {
+    const rows = [];
+    for (const t of this.teams.values()) {
+      rows.push({ key: `t:${t.id}`, kind: 'team', id: t.id, name: t.name, score: t.score, size: t.memberIds.size });
+    }
+    for (const p of this.players.values()) {
+      if (!p.teamId) rows.push({ key: `p:${p.id}`, kind: 'solo', id: p.id, name: p.nickname, score: p.score, size: 1 });
+    }
+    rows.sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
+    let rank = 0;
+    let prev = null;
+    rows.forEach((r, i) => {
+      if (r.score !== prev) {
+        rank = i + 1;
+        prev = r.score;
+      }
+      r.rank = rank;
+    });
+    return rows;
+  }
+
+  winners(standings) {
+    const byPlace = new Map(this.prizes.map((p) => [p.place, p.label]));
+    return standings
+      .filter((r) => r.score > 0 && byPlace.has(r.rank))
+      .map((r) => ({ ...r, prize: byPlace.get(r.rank) }));
+  }
+
+  publicState(standings = this.standings()) {
+    const q = this.question;
+    const showQuestion = q && ['question', 'locked', 'reveal'].includes(this.status);
+    const state = {
+      code: this.code,
+      title: this.title,
+      status: this.status,
+      prizes: this.prizes,
+      serverTime: Date.now(),
+      playerCount: this.players.size,
+      connectedCount: [...this.players.values()].filter((p) => p.connected).length,
+      teams: [...this.teams.values()].map((t) => ({
+        id: t.id,
+        name: t.name,
+        size: t.memberIds.size,
+        full: t.memberIds.size >= this.maxTeamSize,
+        leader: this.players.get(t.leaderId)?.nickname,
+        members: [...t.memberIds].map((id) => this.players.get(id)?.nickname).filter(Boolean),
+      })),
+      soloCount: [...this.players.values()].filter((p) => !p.teamId).length,
+      // Nicknames only (no ids): lets the big screen and the host console list who is in the room
+      players: [...this.players.values()].map((p) => ({
+        nickname: p.nickname,
+        connected: p.connected,
+        team: p.teamId ? this.teams.get(p.teamId)?.name || null : null,
+      })),
+      question: showQuestion
+        ? {
+            index: this.index,
+            total: this.questions.length,
+            text: q.text,
+            options: q.options,
+            category: q.category,
+            timeLimit: this.timeLimit,
+            startedAt: this.startedAt,
+            endsAt: this.endsAt,
+          }
+        : null,
+      answeredCount: this.answers.size,
+      expectedCount: this.expectedCount(),
+      totalQuestions: this.questions.length,
+      timeLimit: this.timeLimit, // seconds per question, known from the lobby on
+    };
+    if (this.status === 'reveal' && q) {
+      state.reveal = { correctIndex: q.correctIndex, explanation: q.explanation || '', tally: this.tally };
+    }
+    if (this.status === 'reveal') state.leaderboard = standings;
+    if (this.status === 'ended') {
+      state.leaderboard = this.finalStandings || standings;
+      state.winners = this.winners(state.leaderboard);
+    }
+    return state;
+  }
+
+  // Shown only to the quiz master: the answer while the question is still live.
+  hostInfo() {
+    const q = this.question;
+    return {
+      correctIndex: q ? q.correctIndex : null,
+      explanation: q?.explanation || '',
+      hasNext: this.index + 1 < this.questions.length,
+    };
+  }
+
+  meState(p, standings = this.standings()) {
+    const team = p.teamId ? this.teams.get(p.teamId) : null;
+    const key = this.entityKeyOf(p);
+    const ans = this.answers.get(key);
+    const row = standings.find((r) => r.key === key);
+    return {
+      playerId: p.id,
+      nickname: p.nickname,
+      teamId: team?.id || null,
+      teamName: team?.name || null,
+      isLeader: !!team && team.leaderId === p.id,
+      leaderName: team ? this.players.get(team.leaderId)?.nickname : null,
+      leaderConnected: team ? !!this.players.get(team.leaderId)?.connected : true,
+      canAnswer:
+        this.status === 'question' && !ans && (!team || team.leaderId === p.id),
+      answered: !!ans,
+      choice: ans ? ans.choice : null,
+      result: this.status === 'reveal' ? this.results.get(key) || null : null,
+      score: row ? row.score : 0,
+      rank: row ? row.rank : null,
+      of: standings.length,
+    };
+  }
+}
