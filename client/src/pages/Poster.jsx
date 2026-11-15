@@ -7,6 +7,7 @@ import { CodeTiles } from '../components/Code.jsx';
 import Logo from '../components/Logo.jsx';
 import Band from '../components/Band.jsx';
 import { PoweredBy } from '../components/Brand.jsx';
+import { posterPng } from '../lib/posterImage.js';
 
 // A4 poster with the join QR: print it, or save it as a PDF, and stick it on tables and walls.
 export default function Poster() {
@@ -17,10 +18,16 @@ export default function Poster() {
   useEffect(() => { api(`/events/by-code/${code}`).then(setEv).catch((e) => setErr(e.message)); }, [code]);
   const url = `${window.location.origin}/?code=${code}`;
 
-  const save = () => {
+  const save = async () => {
+    let href;
+    try {
+      href = await posterPng({ event: ev, code, qrCanvas: big.current, host: window.location.host });
+    } catch {
+      href = big.current.toDataURL('image/png'); // plain QR if the full picture cannot be drawn
+    }
     const a = document.createElement('a');
-    a.href = big.current.toDataURL('image/png');
-    a.download = `granddquiz-${code}-qr.png`;
+    a.href = href;
+    a.download = `granddquiz-${code}-poster.png`;
     a.click();
   };
 
@@ -33,7 +40,7 @@ export default function Poster() {
     <div className="poster-wrap">
       <div className="poster-tools no-print">
         <button className="btn" onClick={() => window.print()}>Print or save as PDF</button>
-        <button className="btn secondary" onClick={save}>Download QR picture</button>
+        <button className="btn secondary" onClick={save}>Download poster picture</button>
         <Link className="btn quiet" to="/host">Back</Link>
         <p className="muted small" style={{ flexBasis: '100%', margin: 0 }}>Tip: in the print window choose "Save as PDF" to send it to a printer shop, and turn on "Background graphics" so the colours print.</p>
       </div>
@@ -65,7 +72,7 @@ export default function Poster() {
         </div>
         <Band height={30} />
       </article>
-      <div style={{ position: 'absolute', left: -9999, top: 0 }} aria-hidden="true"><QRCodeCanvas ref={big} value={url} size={1024} level="M" marginSize={4} /></div>
+      <div className="no-print" style={{ position: 'absolute', left: -9999, top: 0 }} aria-hidden="true"><QRCodeCanvas ref={big} value={url} size={1024} level="M" marginSize={4} /></div>
     </div>
   );
 }

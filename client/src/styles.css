@@ -267,10 +267,14 @@ button.chip { cursor: pointer; min-height: 40px; }
 .poster-foot { margin-top: auto; padding-top: 14px; }
 @media print {
   @page { size: A4; margin: 0; }
-  body { background: #fff; }
+  html, body { margin: 0; padding: 0; height: auto; background: #fff; }
   .no-print, .topbar { display: none !important; }
-  .poster-wrap { background: #fff; padding: 0; min-height: 0; }
-  .poster { width: 210mm; max-width: none; height: 297mm; box-shadow: none; }
-  .poster-qr svg { width: 105mm; }
+  .poster-wrap { background: #fff; padding: 0; margin: 0; min-height: 0; width: 210mm; height: 290mm; overflow: hidden; break-after: avoid; page-break-after: avoid; }
+  .poster { width: 210mm; max-width: none; height: 290mm; margin: 0; box-shadow: none; overflow: hidden; break-inside: avoid; page-break-inside: avoid; }
+  .poster .band { flex: none; width: 210mm; }
+  .poster-body { padding: 8mm 12mm; gap: 3mm; min-height: 0; overflow: hidden; }
+  .poster-title { font-size: 28pt; }
+  .poster-scan { font-size: 24pt; }
+  .poster-qr svg { width: 92mm; }
   * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }
