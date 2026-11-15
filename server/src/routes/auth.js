@@ -5,8 +5,10 @@ import { signToken, requireAuth, requireRole } from '../middleware/auth.js';
 import { wrap } from '../middleware/errors.js';
 import { UserError } from '../services/errors.js';
 import { config } from '../config/env.js';
+import { rateLimit } from '../middleware/rateLimit.js';
 
 const router = Router();
+const limit = rateLimit({ max: 40 });
 const emailOk = (e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
 
 async function createUser({ name, email, password, phone, role }) {
@@ -27,10 +29,11 @@ async function createUser({ name, email, password, phone, role }) {
 // Players register to keep a profile for later events. Quiz masters can self-register only if enabled.
 router.post(
   '/register',
+  limit,
   wrap(async (req, res) => {
     const wantsHost = req.body.role === 'host';
     if (wantsHost && !config.allowHostSignup) {
-      throw new UserError('Quiz master accounts are created by an admin', 403);
+      throw new UserError('Quiz master sign-up is switched off. Contact FugiPay for an account', 403);
     }
     const user = await createUser({ ...req.body, role: wantsHost ? 'host' : 'player' });
     res.status(201).json({ token: signToken(user), user: user.toSafe() });
@@ -39,10 +42,12 @@ router.post(
 
 router.post(
   '/login',
+  limit,
   wrap(async (req, res) => {
     const user = await User.findOne({ email: String(req.body.email || '').toLowerCase() });
     const ok = user && (await bcrypt.compare(String(req.body.password || ''), user.passwordHash));
     if (!ok) throw new UserError('Wrong email or password', 401);
+    if (user.active === false) throw new UserError('This account has been switched off. Contact FugiPay', 403);
     res.json({ token: signToken(user), user: user.toSafe() });
   })
 );

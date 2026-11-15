@@ -84,11 +84,16 @@ export function registerSockets(io, deps) {
           questions,
           timeLimit: event.timeLimit,
           maxTeamSize: config.maxTeamSize,
+          maxPlayers: event.maxPlayers ?? Infinity,
+          branding: event.branding || { poweredBy: true },
         });
         session.onChange = () => broadcast(session);
         store.add(session);
         await deps.markLive?.(event);
       }
+      // Re-read the plan each time the console opens, so an upgrade paid mid-event takes effect straight away
+      if (event.maxPlayers != null) session.maxPlayers = event.maxPlayers;
+      if (event.branding) session.branding = event.branding;
       session.hostSocketId = socket.id;
       session.touch();
       socket.data = { role: 'host', code: session.code };

@@ -14,9 +14,10 @@
     "seed": "node seed/seed.js",
     "seed:reset": "node seed/seed.js --reset",
     "validate": "node scripts/validate-seed.js",
-    "test": "node test/game.test.js",
+    "test": "node test/game.test.js && node test/billing.test.js",
     "demo": "node test/demo-server.js",
-    "test:db": "node test/integration.test.js"
+    "test:db": "node test/integration.test.js",
+    "test:billing": "node test/billing.integration.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

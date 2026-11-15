@@ -1,6 +1,7 @@
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../lib/auth.jsx';
 import Band from './Band.jsx';
+import Logo from './Logo.jsx';
 
 // Top bar for the quiz master / account pages. Players and the big screen use the bare layout.
 export default function Shell({ children, wide = false }) {
@@ -10,9 +11,11 @@ export default function Shell({ children, wide = false }) {
     <>
       <Band />
       <header className="topbar">
-        <Link to="/" className="wordmark">Granddquiz</Link>
+        <Link to="/" className="wordmark" aria-label="Granddquiz home"><Logo size={34} /></Link>
         <nav aria-label="Main">
           {user && ['host', 'admin'].includes(user.role) && <Link to="/host">Events</Link>}
+          {user && ['host', 'admin'].includes(user.role) && <Link to="/host/billing">Plans</Link>}
+          {user?.role === 'admin' && <Link to="/admin/hosts">Quiz masters</Link>}
           {user?.role === 'admin' && <Link to="/admin">Question bank</Link>}
           {user ? (
             <button className="btn quiet" onClick={() => { logout(); nav('/'); }}>Sign out</button>

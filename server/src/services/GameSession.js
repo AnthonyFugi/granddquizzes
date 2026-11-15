@@ -9,7 +9,7 @@ const clean = (s, max) => String(s ?? '').replace(/\s+/g, ' ').trim().slice(0, m
  * Status flow: lobby -> question -> (locked) -> reveal -> question ... -> ended
  */
 export class GameSession {
-  constructor({ code, eventId, title, prizes = [], questions, timeLimit = 20, maxTeamSize = 10 }) {
+  constructor({ code, eventId, title, prizes = [], questions, timeLimit = 20, maxTeamSize = 10, maxPlayers = Infinity, branding = { poweredBy: true } }) {
     this.code = code;
     this.eventId = eventId;
     this.title = title;
@@ -17,6 +17,8 @@ export class GameSession {
     this.questions = questions;
     this.timeLimit = timeLimit;
     this.maxTeamSize = maxTeamSize;
+    this.maxPlayers = maxPlayers; // set from the plan; refreshed whenever the host opens the console
+    this.branding = branding; // already filtered by plan: what guests are allowed to see
 
     this.status = 'lobby';
     this.players = new Map(); // playerId -> { id, nickname, socketId, connected, teamId, score }
@@ -70,6 +72,9 @@ export class GameSession {
       if (p.nickname.toLowerCase() === name.toLowerCase()) {
         throw new UserError('That nickname is taken. Try another one');
       }
+    }
+    if (this.players.size >= this.maxPlayers) {
+      throw new UserError(`This quiz is full (${this.maxPlayers} players). Ask the quiz master to upgrade the event`);
     }
     const p = { id: randomUUID(), nickname: name, socketId, connected: true, teamId: null, score: 0 };
     this.players.set(p.id, p);
@@ -330,6 +335,8 @@ export class GameSession {
       prizes: this.prizes,
       serverTime: Date.now(),
       playerCount: this.players.size,
+      maxPlayers: Number.isFinite(this.maxPlayers) ? this.maxPlayers : null,
+      branding: this.branding,
       connectedCount: [...this.players.values()].filter((p) => p.connected).length,
       teams: [...this.teams.values()].map((t) => ({
         id: t.id,

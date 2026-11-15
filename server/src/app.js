@@ -8,6 +8,9 @@ import authRoutes from './routes/auth.js';
 import categoryRoutes from './routes/categories.js';
 import questionRoutes from './routes/questions.js';
 import eventRoutes from './routes/events.js';
+import billingRoutes from './routes/billing.js';
+import hostRoutes from './routes/hosts.js';
+import { paymentsEnabled } from './services/flutterwave.js';
 import { errorHandler } from './middleware/errors.js';
 import { store } from './services/sessionStore.js';
 
@@ -18,13 +21,17 @@ export function createApp() {
   if (config.isProd) app.set('trust proxy', 1);
 
   app.use(cors({ origin: config.clientOrigins.length ? config.clientOrigins : true }));
-  app.use(express.json({ limit: '2mb' }));
+  // rawBody is kept so Flutterwave's webhook signature can be checked against the exact bytes they sent
+  app.use(express.json({ limit: '2mb', verify: (req, res, buf) => { req.rawBody = buf; } }));
 
   app.get('/api/health', (req, res) => res.json({ ok: true, liveQuizzes: store.size }));
+  app.get('/api/config', (req, res) => res.json({ hostSignup: config.allowHostSignup, paymentsEnabled: paymentsEnabled(), currency: config.currency }));
   app.use('/api/auth', authRoutes);
   app.use('/api/categories', categoryRoutes);
   app.use('/api/questions', questionRoutes);
   app.use('/api/events', eventRoutes);
+  app.use('/api/billing', billingRoutes);
+  app.use('/api/hosts', hostRoutes);
   app.use('/api', (req, res) => res.status(404).json({ error: 'Not found' }));
 
   // In production one server serves the built React app too

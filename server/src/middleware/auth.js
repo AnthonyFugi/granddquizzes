@@ -14,6 +14,7 @@ export async function requireAuth(req, res, next) {
     const payload = jwt.verify(token, config.jwtSecret);
     const user = await User.findById(payload.sub);
     if (!user) return res.status(401).json({ error: 'Account not found' });
+    if (user.active === false) return res.status(403).json({ error: 'This account has been switched off. Contact FugiPay' });
     req.user = user;
     next();
   } catch {

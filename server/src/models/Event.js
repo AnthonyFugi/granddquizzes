@@ -11,6 +11,19 @@ const eventSchema = new mongoose.Schema(
     difficulty: { type: String, enum: ['mixed', 'easy', 'medium', 'hard'], default: 'mixed' },
     prizes: [{ place: Number, label: { type: String, maxlength: 80 }, _id: false }],
     scheduledFor: { type: Date },
+    // Pass bought for this one event (see services/plans.js). 'free' until paid.
+    tier: { type: String, default: 'free' },
+    paidAt: Date,
+    // Look and feel for guests. Only shown if the plan allows it (services/branding.js).
+    branding: {
+      orgName: { type: String, default: '' },
+      tagline: { type: String, default: '' },
+      accent: { type: String, default: '' },
+      sponsors: [{ type: String }],
+      hasLogo: { type: Boolean, default: false },
+      logo: { type: String, default: '' }, // small image as a data URL, served from /api/events/by-code/:code/logo
+      _id: false,
+    },
     status: { type: String, enum: ['scheduled', 'live', 'ended'], default: 'scheduled' },
     // Saved when the quiz ends: names and scores only. No player identities.
     results: [{ rank: Number, kind: String, name: String, score: Number, _id: false }],

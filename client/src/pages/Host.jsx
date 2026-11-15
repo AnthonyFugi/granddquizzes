@@ -5,6 +5,8 @@ import { CodeTiles } from '../components/Code.jsx';
 import { api } from '../lib/api.js';
 import { useAuth } from '../lib/auth.jsx';
 import { downloadCsv, resultsCsv, resultsFilename } from '../lib/csv.js';
+import { useConfig } from '../hooks/useConfig.js';
+import BrandingForm, { brandingBody, brandingFrom, emptyBranding } from '../components/BrandingForm.jsx';
 
 export default function Host() {
   const { user } = useAuth();
@@ -18,6 +20,7 @@ export function SignIn({ user, title = 'Quiz master sign in' }) {
   const [password, setPassword] = useState('');
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
+  const cfg = useConfig();
   const submit = async (e) => {
     e.preventDefault();
     setBusy(true);
@@ -27,13 +30,14 @@ export function SignIn({ user, title = 'Quiz master sign in' }) {
   return (
     <div style={{ maxWidth: 440 }}>
       <h1>{title}</h1>
-      {user && <p className="error">You are signed in as a player ({user.email}). Quiz master accounts are created by an admin. <button className="btn quiet" onClick={logout}>Sign out</button></p>}
+      {user && <p className="error">You are signed in as a player ({user.email}). Sign out to use a quiz master account. <button className="btn quiet" onClick={logout}>Sign out</button></p>}
       <form onSubmit={submit}>
         <div className="field"><label htmlFor="email">Email</label><input id="email" type="email" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} required /></div>
         <div className="field"><label htmlFor="pw">Password</label><input id="pw" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required /></div>
         {err && <p className="error" role="alert">{err}</p>}
         <button className="btn" disabled={busy}>Sign in</button>
       </form>
+      {cfg?.hostSignup && title === 'Quiz master sign in' && <p style={{ marginTop: 18 }}>New here? <Link to="/host/signup">Create a quiz master account</Link>. It is free to try.</p>}
     </div>
   );
 }
@@ -63,14 +67,15 @@ function Events() {
       <div className="section">
         {events === null && <p className="muted">Loading events...</p>}
         {events?.length === 0 && !creating && <p>No events yet. Create one, share its join code, and open the console when your guests arrive.</p>}
-        {events?.map((ev) => <EventRow key={ev._id} ev={ev} onDelete={() => remove(ev)} />)}
+        {events?.map((ev) => <EventRow key={ev._id} ev={ev} onDelete={() => remove(ev)} onChanged={load} />)}
       </div>
     </div>
   );
 }
 
-function EventRow({ ev, onDelete }) {
+function EventRow({ ev, onDelete, onChanged }) {
   const [regs, setRegs] = useState(null);
+  const [editing, setEditing] = useState(false);
   const [open, setOpen] = useState(false);
   const toggle = async () => {
     if (!open && regs === null) setRegs(await api(`/events/${ev._id}/registrations`).catch(() => []));
@@ -80,7 +85,7 @@ function EventRow({ ev, onDelete }) {
     <div className="event">
       <div className="row between">
         <div>
-          <h3 style={{ marginBottom: 4 }}>{ev.title} <span className={`status ${ev.status}`}>{ev.status}</span></h3>
+          <h3 style={{ marginBottom: 4 }}>{ev.title} <span className={`status ${ev.status}`}>{ev.status}</span> <span className={`plan-badge ${ev.entitlements?.plan === 'free' ? '' : 'paid'}`}>{ev.entitlements ? `${ev.entitlements.planName}, up to ${ev.entitlements.maxPlayers} players` : ''}</span></h3>
           <div className="muted small">
             {ev.questionCount} questions, {ev.timeLimit}s each
             {ev.categories?.length ? `, ${ev.categories.map((c) => c.name).join(', ')}` : ', all categories'}
@@ -92,8 +97,12 @@ function EventRow({ ev, onDelete }) {
       <div className="row" style={{ marginTop: 10 }}>
         {ev.status !== 'ended' && <Link className="btn small" to={`/host/${ev._id}`}>{ev.status === 'live' ? 'Return to console' : 'Open console'}</Link>}
         <button className="btn secondary small" onClick={toggle}>Registrations ({ev.registrations})</button>
+        {ev.status !== 'ended' && <Link className="btn secondary small" to={`/poster/${ev.joinCode}`}>QR poster</Link>}
+        {ev.status !== 'ended' && <button className="btn secondary small" onClick={() => setEditing(!editing)}>Look and sponsors</button>}
+        {ev.status !== 'ended' && ev.entitlements?.via !== 'subscription' && ev.entitlements?.maxPlayers < 300 && <Link className="btn copper small" to={`/host/billing?event=${ev._id}`}>Upgrade</Link>}
         <button className="btn danger small" onClick={onDelete}>Delete</button>
       </div>
+      {editing && <EditBranding ev={ev} onSaved={() => { setEditing(false); onChanged(); }} onCancel={() => setEditing(false)} />}
       {open && (
         <div style={{ marginTop: 10 }}>
           {regs?.length ? (
@@ -115,6 +124,7 @@ function EventRow({ ev, onDelete }) {
 function CreateEvent({ cats, onCancel, onCreated }) {
   const [f, setF] = useState({ title: '', questionCount: 15, timeLimit: 20, difficulty: 'mixed', scheduledFor: '', p1: '', p2: '', p3: '' });
   const [picked, setPicked] = useState(new Set());
+  const [brand, setBrand] = useState(emptyBranding);
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
@@ -128,7 +138,7 @@ function CreateEvent({ cats, onCancel, onCreated }) {
         method: 'POST',
         body: {
           title: f.title, questionCount: Number(f.questionCount), timeLimit: Number(f.timeLimit), difficulty: f.difficulty,
-          categories: [...picked], scheduledFor: f.scheduledFor || undefined,
+          categories: [...picked], scheduledFor: f.scheduledFor || undefined, branding: brandingBody(brand),
           prizes: [f.p1, f.p2, f.p3].map((label, i) => ({ place: i + 1, label })).filter((p) => p.label.trim()),
         },
       });
@@ -167,9 +177,30 @@ function CreateEvent({ cats, onCancel, onCreated }) {
         <input aria-label="Second prize" placeholder="2nd place prize" value={f.p2} onChange={set('p2')} />
         <input aria-label="Third prize" placeholder="3rd place prize" value={f.p3} onChange={set('p3')} />
       </div>
+      <details className="field" style={{ marginBottom: 16 }}>
+        <summary style={{ fontWeight: 600, cursor: 'pointer', minHeight: 44, display: 'flex', alignItems: 'center' }}>Your logo, colour and sponsors (optional)</summary>
+        <BrandingForm value={brand} onChange={setBrand} />
+      </details>
       <div className="field"><label htmlFor="when">Scheduled for (optional)</label><input id="when" type="datetime-local" value={f.scheduledFor} onChange={set('scheduledFor')} /></div>
       {err && <p className="error" role="alert">{err}</p>}
       <div className="row"><button className="btn" disabled={busy}>Create event</button><button type="button" className="btn secondary" onClick={onCancel}>Cancel</button></div>
     </form>
+  );
+}
+
+function EditBranding({ ev, onSaved, onCancel }) {
+  const [v, setV] = useState(() => brandingFrom(ev.branding));
+  const [err, setErr] = useState('');
+  const [busy, setBusy] = useState(false);
+  const save = async () => {
+    setBusy(true);
+    try { await api(`/events/${ev._id}/branding`, { method: 'PUT', body: brandingBody(v) }); onSaved(); } catch (x) { setErr(x.message); setBusy(false); }
+  };
+  return (
+    <div className="section" style={{ maxWidth: 680 }}>
+      <BrandingForm value={v} onChange={setV} entitlements={ev.entitlements} />
+      {err && <p className="error" role="alert">{err}</p>}
+      <div className="row"><button className="btn" disabled={busy} onClick={save}>Save</button><button className="btn secondary" onClick={onCancel}>Cancel</button></div>
+    </div>
   );
 }

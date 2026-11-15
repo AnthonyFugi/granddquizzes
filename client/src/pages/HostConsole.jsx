@@ -47,9 +47,16 @@ function Console({ eventId, token }) {
         <div className="row">
           <CodeTiles code={meta.code} size="small" />
           <a className="btn secondary small" href={`/screen/${meta.code}`} target="_blank" rel="noreferrer">Open big screen</a>
+          <a className="btn secondary small" href={`/poster/${meta.code}`} target="_blank" rel="noreferrer">QR poster</a>
         </div>
       </div>
 
+      {state.maxPlayers && state.playerCount >= state.maxPlayers - 2 && st !== 'ended' && (
+        <p className="notice" role="status">
+          {state.playerCount >= state.maxPlayers ? `The room is full (${state.maxPlayers} players). Anyone else who tries to join is turned away.` : `Nearly full: ${state.playerCount} of ${state.maxPlayers} places taken.`}{' '}
+          <Link to={`/host/billing?event=${eventId}`}>Upgrade this event</Link>, then reopen this console and the new limit applies at once.
+        </p>
+      )}
       <div className="console">
         <section aria-live="polite">
           {st === 'lobby' && (

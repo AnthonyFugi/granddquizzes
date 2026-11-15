@@ -65,6 +65,22 @@ Note: Render's free tier sleeps when idle and **drops live sessions on every res
 - When an event ends, the top-10 nicknames and scores are saved on the Event (this is the only guest data kept), and MongoDB deletes them automatically after `RETENTION_DAYS` (default 30), together with that event's registrations.
 - `User` records are created only when someone registers.
 
+## Deploy the client on Firebase Hosting (API stays on Render)
+
+Use this when you want the app on a `*.web.app` address (or your own domain) with the server on Render.
+
+1. **Firebase project.** At https://console.firebase.google.com create a project (or reuse one). Hosting is on the free Spark plan.
+   If you reuse a project that already hosts another site, create a second site for this app (Hosting > Add another site, e.g. `granddquiz`) and add `"site": "granddquiz"` inside the `"hosting"` block of `firebase.json`.
+2. **Tools, once:** `npm install -g firebase-tools`, then `firebase login`.
+3. **Link the folder, once**, from the project root: `firebase use --add` and pick the project. (`firebase.json` is already included, so do **not** run `firebase init` and overwrite it.)
+4. **Deploy:** `npm run deploy:firebase`. It builds the client pointing at `https://granddquizzes.onrender.com` and uploads it. For another API address: `API_URL=https://your-api.example npm run deploy:firebase`.
+5. **Allow the Firebase address on Render.** In the Render service > Environment set
+   `CLIENT_ORIGIN=https://<site>.web.app,https://<site>.firebaseapp.com,https://granddquizzes.onrender.com`
+   (comma separated, no trailing slashes, add your own domain here too if you connect one), then save. Render redeploys.
+6. Open `https://<site>.web.app`. Join links, the QR code and the big screen use whatever address the page was opened on, so share the Firebase address with players.
+
+Notes: the API still wakes slowly on Render's free tier, so open the app a few minutes early. Redeploying the client on Firebase never interrupts a live quiz (only a Render redeploy does).
+
 ## Troubleshooting
 
 | What you see | Cause and fix |
@@ -74,6 +90,7 @@ Note: Render's free tier sleeps when idle and **drops live sessions on every res
 | `localhost:5173` loads but pages stay empty or sockets fail | The server is not running, or it is on another port. Start `cd server && npm run dev` and make sure `PORT` in `server/.env` matches (or set `VITE_PROXY_TARGET`). |
 | "Port 5001 is already in use" | Another program has it. Set a different `PORT` in `server/.env`. (The default is 5001 because on a Mac, port 5000 belongs to AirPlay Receiver.) |
 | `npm run dev` in the client says it cannot find `index.html` or `vite.config.js` | Your `client/` folder is incomplete. Re-extract the full project zip over it. |
+| Sign-in says **"Failed to fetch"**, or the app loads but nothing works (Firebase + Render) | The browser is blocking the API call (CORS). Set `CLIENT_ORIGIN` on Render to the exact Firebase address(es), comma separated, with `https://` and no trailing slash, then let Render redeploy. If the API address is wrong or the Render free instance is still waking, wait a minute and reload. |
 | Want to check the database setup | `cd server && TEST_MONGODB_URI=mongodb://127.0.0.1:27017 npm run test:db` runs the whole app against a throwaway local database. |
 
 ## Live protocol (Socket.IO)
@@ -93,6 +110,10 @@ Flow: lobby → question → locked (timer ends, or everyone answered) → revea
 - **Results sheet:** when a quiz finishes, the host console has **Download results (CSV)** with every rank, team members, points and prizes. It is built in the browser, so nothing extra is stored. Only the top 10 names and scores stay on the server (then auto-delete), and finished events in the events list offer **Download top 10 (CSV)**. Nicknames that start with `=`, `+`, `-` or `@` are neutralised so a spreadsheet never runs them as formulas.
 - **Sound on the big screen:** a **Turn sound on** button (bottom right) switches on synthesised cues: a chime when a question starts, ticks for the last 5 seconds, a buzzer when time runs out (a ding when everyone answered early), a reveal flourish, a join blip in the lobby and a fanfare for the winners. Browsers block sound until the page is clicked, so it starts off and must be switched on once per page load. There are no audio files to host.
 
+## Logo
+
+A malachite tile with nested copper, marigold and cream diamonds (the chitenge motif from the pattern band) around a question mark whose dot is a small diamond. In the app it is the `Logo` component (`client/src/components/Logo.jsx`), shown in the top bar, join page and big screen. Files in `client/public/`: `logo-mark.svg` and `favicon.svg` (the browser tab icon), `apple-touch-icon.png` (iPhone home-screen icon), `logo-512.png` (transparent mark), `logo-lockup.png` and `logo-lockup-dark.png` (mark plus name, for sharing, print and social). The lockup PNGs use the Unbounded font; the SVGs contain no text.
+
 ## Timer
 
 Every quiz is timed. The quiz master sets seconds per question (5 to 120, default 20, with quick presets) when creating the event. Players are told the limit in the lobby, and each question shows a large countdown number plus a shrinking bar on phones, the big screen and the host console. It turns red for the last 5 seconds, and answers lock automatically at zero (earlier if everyone has answered). Faster correct answers score more, so the clock also drives the points.
@@ -101,7 +122,15 @@ Every quiz is timed. The quiz master sets seconds per question (5 to 120, defaul
 
 `e2e/browser-flow.py` drives a quiz master, a big screen and three phones through a full game with Playwright, including the sound and CSV checks; `e2e/sound-timeup.py` covers the countdown ticks and buzzer, `e2e/timer-check.py` covers the on-screen countdown (setup in each file header). `cd client && npm test` runs the CSV unit tests.
 
+## Plans, branding, QR poster and payments
+- **Quiz masters sign themselves up** at `/host/signup` (turn off with `ALLOW_HOST_SIGNUP=false`). Free events allow 10 players and show the Granddquiz badge.
+- **Plans** (`server/src/services/plans.js`): per-event passes (Small / Medium / Large) and Venue / Pro subscriptions. Prices are in ZMW and can be changed with `PLAN_PRICES`.
+- **Branding**: logo, name, colour, tagline and up to three sponsors per event. Guests see it only when the plan includes it. Pro removes the badge.
+- **QR poster**: `/poster/CODE` is a print-ready A4 page with the join QR; the big screen also keeps a small join QR on screen during the quiz.
+- **Payments**: Flutterwave hosted checkout (mobile money and card). Setup steps are in `BILLING.md`.
+- **Admin** (`/admin/hosts`): see quiz masters, give a pilot venue a free trial, record a bank-transfer payment, switch accounts off.
+- Tests: `npm test` (unit), `npm run test:billing` in `server/` (needs MongoDB, uses a fake Flutterwave), `python3 e2e/billing-flow.py` (browser).
+
 ## Next
 
 Possible additions: sound cues on the big screen, a downloadable results sheet for the host, per-event question uploads.
-# granddquizzes

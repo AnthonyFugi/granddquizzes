@@ -6,6 +6,8 @@ import { Registration } from '../models/Registration.js';
 import { pickQuestions } from '../services/questionPicker.js';
 import { UserError } from '../services/errors.js';
 import { store } from '../services/sessionStore.js';
+import { entitlementsFor } from '../services/plans.js';
+import { publicBranding } from '../services/branding.js';
 
 export const mongoDeps = {
   store,
@@ -19,13 +21,18 @@ export const mongoDeps = {
     }
     const user = await User.findById(payload.sub);
     if (!user || !['host', 'admin'].includes(user.role)) throw new UserError('Only quiz masters can host');
+    if (user.active === false) throw new UserError('This account has been switched off. Contact FugiPay');
     const event = await Event.findById(eventId);
     if (!event) throw new UserError('Event not found');
     if (user.role !== 'admin' && String(event.host) !== String(user._id)) {
       throw new UserError('That event belongs to another quiz master');
     }
     if (event.status === 'ended') throw new UserError('This event has already ended');
+    const host = String(event.host) === String(user._id) ? user : await User.findById(event.host);
+    const ent = entitlementsFor({ eventTier: event.tier, host });
     return {
+      maxPlayers: ent.maxPlayers,
+      branding: publicBranding(event.branding, ent, event.joinCode),
       id: String(event._id),
       title: event.title,
       joinCode: event.joinCode,

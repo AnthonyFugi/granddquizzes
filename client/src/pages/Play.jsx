@@ -5,6 +5,8 @@ import { CodeTiles } from '../components/Code.jsx';
 import { Leaderboard, Option, TimeNote, TimerBar, Waiting, ordinal } from '../components/Quiz.jsx';
 import { useCountdown, usePlayer } from '../hooks/useQuiz.js';
 import { clearPlayer } from '../lib/socket.js';
+import { OrgMark, SponsorStrip } from '../components/Brand.jsx';
+import { brandVars, hasBrand } from '../lib/brand.js';
 
 export default function Play() {
   const code = useParams().code.toUpperCase();
@@ -42,7 +44,7 @@ export default function Play() {
   }
 
   return (
-    <Frame code={code} title={state.title} banner={phase === 'reconnecting' ? 'Connection lost. Reconnecting...' : ''}>
+    <Frame code={code} title={state.title} branding={state.branding} banner={phase === 'reconnecting' ? 'Connection lost. Reconnecting...' : ''}>
       {state.status === 'lobby' && <Lobby state={state} me={me} act={act} />}
       {['question', 'locked'].includes(state.status) && <Question state={state} me={me} act={act} clock={clock} />}
       {state.status === 'reveal' && <Reveal state={state} me={me} />}
@@ -51,19 +53,23 @@ export default function Play() {
   );
 }
 
-function Frame({ code, title, banner, children }) {
+function Frame({ code, title, banner, branding, children }) {
   return (
-    <>
+    <div style={brandVars(branding)}>
       <Band />
+      {branding?.accent && <div className="brand-stripe" />}
       {banner && <div className="banner" role="status">{banner}</div>}
       <main className="page">
+        {hasBrand(branding) && <div style={{ marginBottom: 12 }}><OrgMark branding={branding} size={40} /></div>}
         <div className="row between" style={{ marginBottom: 18 }}>
           <span className="muted small">{title || 'Granddquiz'}</span>
           <CodeTiles code={code} size="small" />
         </div>
         {children}
+        {branding && <SponsorStrip branding={branding} />}
+        {branding?.poweredBy && <p className="powered-note">Quiz night powered by <strong>Granddquiz</strong></p>}
       </main>
-    </>
+    </div>
   );
 }
 

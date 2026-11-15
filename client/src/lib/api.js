@@ -1,4 +1,5 @@
-export const API_BASE = import.meta.env.VITE_API_URL || '';
+// Empty = same origin (server serves the client). Set VITE_API_URL when the client is hosted separately, e.g. on Firebase.
+export const API_BASE = (import.meta.env.VITE_API_URL || '').trim().replace(/\/+$/, '');
 
 export function savedAuth() {
   try {

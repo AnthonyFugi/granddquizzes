@@ -8,6 +8,16 @@ import { requireAuth, requireRole } from '../middleware/auth.js';
 import { wrap } from '../middleware/errors.js';
 import { UserError } from '../services/errors.js';
 import { store } from '../services/sessionStore.js';
+import { eventEntitlements, entitlementsMap } from '../services/entitlements.js';
+import { decodeLogo, publicBranding, sanitizeBranding } from '../services/branding.js';
+
+// What gets stored for the branding block (hasLogo lets the host list skip the heavy image data)
+const brandingForSave = (input, previous) => {
+  const b = sanitizeBranding(input);
+  if (b.logo === undefined) b.logo = previous?.logo || ''; // not sent = keep the current logo
+  b.hasLogo = !!b.logo;
+  return b;
+};
 
 const router = Router();
 const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no 0/O/1/I confusion on a big screen
@@ -18,9 +28,25 @@ router.get(
   '/by-code/:code',
   wrap(async (req, res) => {
     const code = req.params.code.toUpperCase();
-    const ev = await Event.findOne({ joinCode: code }).select('title joinCode status scheduledFor prizes');
+    const ev = await Event.findOne({ joinCode: code }).select('title joinCode status scheduledFor prizes tier host branding.orgName branding.tagline branding.accent branding.sponsors branding.hasLogo');
     if (!ev) throw new UserError('No event with that code', 404);
-    res.json({ title: ev.title, code: ev.joinCode, status: ev.status, scheduledFor: ev.scheduledFor, prizes: ev.prizes, live: !!store.getByCode(code) });
+    const ent = await eventEntitlements(ev);
+    const b = ev.toObject().branding;
+    const branding = publicBranding(b && { ...b, logo: b.hasLogo ? 'yes' : '' }, ent, ev.joinCode);
+    res.json({ title: ev.title, code: ev.joinCode, status: ev.status, scheduledFor: ev.scheduledFor, prizes: ev.prizes, live: !!store.getByCode(code), branding });
+  })
+);
+
+// The event's logo as a normal image, so it is cached by the browser instead of travelling inside every quiz update
+router.get(
+  '/by-code/:code/logo',
+  wrap(async (req, res) => {
+    const ev = await Event.findOne({ joinCode: req.params.code.toUpperCase() }).select('host tier branding.logo');
+    const ent = ev && (await eventEntitlements(ev));
+    const logo = ev && ent.branding ? decodeLogo(ev.branding?.logo) : null;
+    if (!logo) return res.status(404).json({ error: 'No logo' });
+    res.set({ 'Content-Type': logo.type, 'Cache-Control': 'public, max-age=300', 'X-Content-Type-Options': 'nosniff', 'Cross-Origin-Resource-Policy': 'cross-origin' });
+    res.send(logo.bytes);
   })
 );
 
@@ -85,6 +111,7 @@ router.post(
           timeLimit,
           difficulty,
           prizes,
+          branding: brandingForSave(b.branding),
           scheduledFor: b.scheduledFor ? new Date(b.scheduledFor) : undefined,
         });
         break;
@@ -93,7 +120,9 @@ router.post(
       }
     }
     if (!event) throw new UserError('Could not create a join code. Try again', 500);
-    res.status(201).json(event);
+    const out = event.toObject();
+    delete out.branding.logo;
+    res.status(201).json(out);
   })
 );
 
@@ -101,13 +130,35 @@ router.get(
   '/mine',
   wrap(async (req, res) => {
     const filter = req.user.role === 'admin' ? {} : { host: req.user._id };
-    const events = await Event.find(filter).sort({ createdAt: -1 }).limit(50).populate('categories', 'name icon').lean();
+    const events = await Event.find(filter).select('-branding.logo').sort({ createdAt: -1 }).limit(50).populate('categories', 'name icon').lean();
+    const ents = await entitlementsMap(events);
     const counts = await Registration.aggregate([
       { $match: { event: { $in: events.map((e) => e._id) } } },
       { $group: { _id: '$event', n: { $sum: 1 } } },
     ]);
     const map = new Map(counts.map((c) => [String(c._id), c.n]));
-    res.json(events.map((e) => ({ ...e, registrations: map.get(String(e._id)) || 0 })));
+    res.json(events.map((e) => ({ ...e, registrations: map.get(String(e._id)) || 0, entitlements: ents.get(String(e._id)) })));
+  })
+);
+
+// Change the look of an event (name, colour, logo, sponsors). Guests see it only if the plan includes branding.
+router.put(
+  '/:id/branding',
+  wrap(async (req, res) => {
+    const ev = await Event.findById(req.params.id);
+    if (!ev || (req.user.role !== 'admin' && String(ev.host) !== String(req.user._id))) throw new UserError('Event not found', 404);
+    if (ev.status === 'ended') throw new UserError('This event has already ended');
+    ev.branding = brandingForSave(req.body, ev.branding);
+    await ev.save();
+    const ent = await eventEntitlements(ev);
+    const live = store.getByEvent(ev._id);
+    if (live) {
+      live.branding = publicBranding(ev.branding, ent, ev.joinCode);
+      live.onChange();
+    }
+    const out = { ...ev.toObject().branding };
+    delete out.logo;
+    res.json({ branding: out, entitlements: ent });
   })
 );
 

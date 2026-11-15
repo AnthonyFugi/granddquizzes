@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import { useParams } from 'react-router-dom';
 import Band from '../components/Band.jsx';
+import { SponsorStrip, StageHeader } from '../components/Brand.jsx';
+import { brandVars } from '../lib/brand.js';
 import { CodeTiles } from '../components/Code.jsx';
 import { Leaderboard, Option, TimeNote, TimerBar, Waiting } from '../components/Quiz.jsx';
 import { useCountdown, useScreen } from '../hooks/useQuiz.js';
@@ -14,11 +16,22 @@ export default function Screen() {
   const clock = useCountdown(state);
   const [sound, setSoundState] = useState(false);
   useScreenSounds(state, clock.left);
+  const showJoinCorner = !!state && ['question', 'locked', 'reveal'].includes(state.status);
 
   return (
-    <div className="stage">
+    <div className="stage" style={brandVars(state?.branding)}>
       <Band height={28} />
+      {state?.branding?.accent && <div className="brand-stripe" />}
       <div className="page">
+        <div className="stage-top">
+          <StageHeader branding={state?.branding || {}} />
+          {showJoinCorner && (
+            <div className="join-corner" aria-label={`Join late: code ${code}`}>
+              <div className="qr"><QRCodeSVG value={`${window.location.origin}/?code=${code}`} size={84} level="M" marginSize={0} /></div>
+              <div><div className="small">Join in:</div><strong style={{ font: '700 1.3rem var(--display)', letterSpacing: '0.06em' }}>{code}</strong></div>
+            </div>
+          )}
+        </div>
         {phase === 'error' && (
           <div>
             <h1>Waiting for the quiz master</h1>
@@ -31,6 +44,7 @@ export default function Screen() {
         {state && ['question', 'locked'].includes(state.status) && <Question state={state} clock={clock} />}
         {state?.status === 'reveal' && <Reveal state={state} />}
         {state?.status === 'ended' && <Ended state={state} />}
+        {state && <SponsorStrip branding={state.branding} light />}
       </div>
       <button type="button" className="sound-toggle" aria-pressed={sound} onClick={async () => setSoundState(await setSound(!sound))}>
         {sound ? 'Sound on' : 'Turn sound on'}
