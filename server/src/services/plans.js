@@ -62,6 +62,10 @@ const activeSub = (host, now) => {
  * Nobody loses a feature they paid for by buying another plan.
  */
 export function entitlementsFor({ eventTier, host, now = Date.now() }) {
+  // The super admin runs events for free, with everything switched on (home games, demos)
+  if (host?.role === 'admin') {
+    return { plan: 'admin', planName: 'Super admin', maxPlayers: 500, branding: true, sponsors: 10, whiteLabel: true, via: 'admin', until: null };
+  }
   const parts = [FREE];
   const pass = eventTier && eventTier !== 'free' ? getPlan(eventTier) : null;
   if (pass) parts.push(pass);

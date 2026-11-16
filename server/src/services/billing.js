@@ -19,7 +19,11 @@ export async function applyPayment(txRef, flwTransactionId) {
       await Event.updateOne({ _id: claimed.event }, { tier: plan.key, paidAt: new Date() });
     } else {
       const host = await User.findById(claimed.host);
-      await User.updateOne({ _id: host._id }, { subscription: extendSubscription(host.subscription, plan) });
+      const subscription = extendSubscription(host.subscription, plan);
+      const set = { subscription };
+      // A paid plan also keeps the quiz master's access open for as long as the plan runs
+      if (host.role === 'host') set.accessUntil = host.accessUntil && new Date(host.accessUntil) > subscription.until ? host.accessUntil : subscription.until;
+      await User.updateOne({ _id: host._id }, set);
     }
   } catch (e) {
     await Payment.updateOne({ _id: claimed._id }, { $unset: { appliedAt: 1 } }); // allow a retry

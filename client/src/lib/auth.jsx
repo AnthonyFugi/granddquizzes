@@ -28,8 +28,8 @@ export function AuthProvider({ children }) {
   };
   const register = async (fields) => {
     const res = await api('/auth/register', { method: 'POST', body: fields });
-    store({ token: res.token, user: res.user });
-    return res.user;
+    if (res.token) store({ token: res.token, user: res.user });
+    return res; // { pending: true } for quiz masters waiting for approval
   };
   const logout = () => store(null);
 

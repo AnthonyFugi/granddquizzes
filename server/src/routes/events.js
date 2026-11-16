@@ -4,7 +4,7 @@ import { Event } from '../models/Event.js';
 import { Category } from '../models/Category.js';
 import { Question } from '../models/Question.js';
 import { Registration } from '../models/Registration.js';
-import { requireAuth, requireRole } from '../middleware/auth.js';
+import { requireAuth, requireRole, requireCurrentAccess } from '../middleware/auth.js';
 import { wrap } from '../middleware/errors.js';
 import { UserError } from '../services/errors.js';
 import { store } from '../services/sessionStore.js';
@@ -68,6 +68,7 @@ router.post(
 
 // ----- quiz master -----
 router.use(requireAuth, requireRole('host', 'admin'));
+router.use((req, res, next) => (['POST', 'PUT', 'PATCH'].includes(req.method) ? requireCurrentAccess(req, res, next) : next()));
 
 router.post(
   '/',

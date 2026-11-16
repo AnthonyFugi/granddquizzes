@@ -11,7 +11,7 @@ const router = Router();
 const limit = rateLimit({ max: 40 });
 const emailOk = (e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
 
-async function createUser({ name, email, password, phone, role }) {
+async function createUser({ name, email, password, phone, role, status = 'approved' }) {
   if (!name || String(name).trim().length < 2) throw new UserError('Enter your name');
   if (!emailOk(String(email || ''))) throw new UserError('Enter a valid email address');
   if (String(password || '').length < 8) throw new UserError('Password must be at least 8 characters');
@@ -22,6 +22,7 @@ async function createUser({ name, email, password, phone, role }) {
     email,
     phone: phone || '',
     role,
+    status,
     passwordHash: await bcrypt.hash(String(password), 10),
   });
 }
@@ -35,7 +36,12 @@ router.post(
     if (wantsHost && !config.allowHostSignup) {
       throw new UserError('Quiz master sign-up is switched off. Contact FugiPay for an account', 403);
     }
-    const user = await createUser({ ...req.body, role: wantsHost ? 'host' : 'player' });
+    // A new quiz master gets no session until FugiPay approves the account
+    if (wantsHost) {
+      await createUser({ ...req.body, role: 'host', status: 'pending' });
+      return res.status(201).json({ pending: true, message: 'Thanks. FugiPay will review your account and contact you. You can sign in once it is approved.' });
+    }
+    const user = await createUser({ ...req.body, role: 'player' });
     res.status(201).json({ token: signToken(user), user: user.toSafe() });
   })
 );
@@ -47,6 +53,8 @@ router.post(
     const user = await User.findOne({ email: String(req.body.email || '').toLowerCase() });
     const ok = user && (await bcrypt.compare(String(req.body.password || ''), user.passwordHash));
     if (!ok) throw new UserError('Wrong email or password', 401);
+    if (user.status === 'pending') throw new UserError('Your account is waiting for approval from FugiPay. We will contact you once it is approved', 403);
+    if (user.status === 'rejected') throw new UserError('This account was not approved. Contact FugiPay', 403);
     if (user.active === false) throw new UserError('This account has been switched off. Contact FugiPay', 403);
     res.json({ token: signToken(user), user: user.toSafe() });
   })

@@ -1,4 +1,4 @@
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../lib/auth.jsx';
 import Band from './Band.jsx';
 import Logo from './Logo.jsx';
@@ -7,6 +7,7 @@ import Logo from './Logo.jsx';
 export default function Shell({ children, wide = false }) {
   const { user, logout } = useAuth();
   const nav = useNavigate();
+  const { pathname } = useLocation();
   return (
     <>
       <Band />
@@ -19,8 +20,10 @@ export default function Shell({ children, wide = false }) {
           {user?.role === 'admin' && <Link to="/admin">Question bank</Link>}
           {user ? (
             <button className="btn quiet" onClick={() => { logout(); nav('/'); }}>Sign out</button>
+          ) : pathname === '/host' ? (
+            <Link to="/host/signup">Create account</Link>
           ) : (
-            <Link to="/host">Quiz master sign in</Link>
+            <Link to="/host">Sign in</Link>
           )}
         </nav>
       </header>

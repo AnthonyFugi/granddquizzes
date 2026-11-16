@@ -1,7 +1,7 @@
 import jwt from 'jsonwebtoken';
 import { config } from '../config/env.js';
 import { Event } from '../models/Event.js';
-import { User } from '../models/User.js';
+import { User, accessExpired } from '../models/User.js';
 import { Registration } from '../models/Registration.js';
 import { pickQuestions } from '../services/questionPicker.js';
 import { UserError } from '../services/errors.js';
@@ -22,6 +22,8 @@ export const mongoDeps = {
     const user = await User.findById(payload.sub);
     if (!user || !['host', 'admin'].includes(user.role)) throw new UserError('Only quiz masters can host');
     if (user.active === false) throw new UserError('This account has been switched off. Contact FugiPay');
+    if (user.status === 'pending' || user.status === 'rejected') throw new UserError('This account is not approved. Contact FugiPay');
+    if (accessExpired(user)) throw new UserError('Your access period has ended. Renew a plan or contact FugiPay to run events');
     const event = await Event.findById(eventId);
     if (!event) throw new UserError('Event not found');
     if (user.role !== 'admin' && String(event.host) !== String(user._id)) {

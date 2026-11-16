@@ -92,11 +92,18 @@ try {
   ok('plans are public');
 
   const su = await call('POST', '/api/auth/register', { name: 'Venue Owner', email: 'owner@venue.test', password: 'password123', phone: '+260971000000', role: 'host' });
-  assert.equal(su.status, 201); assert.equal(su.body.user.role, 'host');
-  const host = su.body;
+  assert.equal(su.status, 201); assert.equal(su.body.pending, true); assert.equal(su.body.token, undefined);
   const su2 = await call('POST', '/api/auth/register', { name: 'Other Host', email: 'other@venue.test', password: 'password123', role: 'host' });
-  const host2 = su2.body;
-  ok('a quiz master can sign themselves up');
+  assert.equal(su2.body.pending, true);
+  assert.equal((await call('POST', '/api/auth/login', { email: 'owner@venue.test', password: 'password123' })).status, 403);
+  const admin0 = (await call('POST', '/api/auth/login', { email: 'admin@test.dev', password: 'TestPass123' })).body;
+  const pend = (await call('GET', '/api/hosts', null, admin0.token)).body.filter((h) => h.status === 'pending');
+  assert.equal(pend.length, 2);
+  for (const h of pend) assert.equal((await call('PATCH', `/api/hosts/${h.id}`, { status: 'approved' }, admin0.token)).status, 200);
+  const host = (await call('POST', '/api/auth/login', { email: 'owner@venue.test', password: 'password123' })).body;
+  const host2 = (await call('POST', '/api/auth/login', { email: 'other@venue.test', password: 'password123' })).body;
+  assert.equal(host.user.role, 'host');
+  ok('a new quiz master waits for approval, cannot sign in, and can once the admin approves');
 
   const cats = (await call('GET', '/api/categories')).body;
   const mk = (title, extra = {}) => call('POST', '/api/events', { title, questionCount: 5, timeLimit: 10, categories: [cats[0]._id], branding: { orgName: 'Hot Spot Lounge', tagline: 'Thursday nights', accent: '#cf6a1f', sponsors: ['Mosi', 'Zamtel'], logo: pixel }, ...extra }, host.token);
@@ -261,6 +268,20 @@ try {
   assert.equal((await call('PUT', `/api/events/${ev._id}/branding`, { logo: '' }, host.token)).body.branding.hasLogo, false);
   assert.equal((await fetch(`${API}/api/events/by-code/${ev.joinCode}/logo`)).status, 404);
   ok('branding edits reach the live screen at once; removing the logo removes the image; others cannot edit');
+
+  // ----- time-limited access -----
+  const adm = (await call('POST', '/api/auth/login', { email: 'admin@test.dev', password: 'TestPass123' })).body;
+  const hostRow = (await call('GET', '/api/hosts', null, adm.token)).body.find((h) => h.email === 'other@venue.test');
+  assert.ok(hostRow.accessUntil, 'approval sets an end date'); assert.equal(hostRow.expired, false);
+  const accessDays = Math.round((new Date(hostRow.accessUntil) - Date.now()) / 86400000); assert.ok(accessDays >= 29 && accessDays <= 30, `default 30 days, got ${accessDays}`);
+  await mongoose.connection.collection('users').updateOne({ email: 'other@venue.test' }, { $set: { accessUntil: new Date(Date.now() - 86400000) } });
+  assert.equal((await call('GET', '/api/events/mine', null, host2.token)).status, 200);
+  assert.equal((await call('POST', '/api/events', { title: 'Late quiz', questionCount: 5, timeLimit: 10, categories: [cats[0]._id] }, host2.token)).status, 403);
+  assert.equal((await call('GET', '/api/auth/me', null, host2.token)).body.user.expired, true);
+  assert.equal((await call('POST', `/api/hosts/${hostRow.id}/extend`, { days: 10 }, adm.token)).status, 200);
+  assert.equal((await call('POST', '/api/events', { title: 'Back again', questionCount: 5, timeLimit: 10, categories: [cats[0]._id] }, host2.token)).status, 201);
+  assert.equal((await call('POST', `/api/hosts/${adm.user.id}/extend`, { days: 10 }, adm.token)).status, 400);
+  ok('quiz master access ends on its date (view only), an admin can extend it, admins never expire');
 
   console.log(`\n${passed} checks passed`);
   await cleanup();

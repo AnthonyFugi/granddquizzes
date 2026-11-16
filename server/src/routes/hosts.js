@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { User } from '../models/User.js';
+import { User, accessExpired, extendAccess } from '../models/User.js';
 import { Event } from '../models/Event.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { wrap } from '../middleware/errors.js';
@@ -23,7 +23,7 @@ router.get(
         const c = by.get(String(h._id));
         const live = h.subscription?.until && new Date(h.subscription.until).getTime() > now;
         return {
-          id: h._id, name: h.name, email: h.email, phone: h.phone, role: h.role, active: h.active !== false, createdAt: h.createdAt,
+          id: h._id, name: h.name, email: h.email, phone: h.phone, role: h.role, active: h.active !== false, status: h.status || 'approved', accessUntil: h.accessUntil || null, expired: accessExpired(h), createdAt: h.createdAt,
           subscription: live ? { plan: h.subscription.plan, until: h.subscription.until } : null,
           events: c?.n || 0, lastEventAt: c?.last || null,
         };
@@ -42,12 +42,34 @@ router.patch(
   '/:id',
   wrap(async (req, res) => {
     const u = await target(req.params.id);
+    if (['approved', 'rejected'].includes(req.body.status)) {
+      if (String(u._id) === String(req.user._id)) throw new UserError('You cannot change your own approval');
+      u.status = req.body.status;
+      if (req.body.status === 'approved') {
+        u.active = true;
+        // Approval opens a period of access (default 30 days). Admins have no end date.
+        if (u.role === 'host') u.accessUntil = extendAccess(null, Math.min(400, Math.max(1, Number(req.body.days) || 30)));
+      }
+    }
     if (typeof req.body.active === 'boolean') {
       if (String(u._id) === String(req.user._id) && !req.body.active) throw new UserError('You cannot switch off your own account');
       u.active = req.body.active;
     }
     await u.save();
-    res.json({ ok: true, active: u.active });
+    res.json({ ok: true, active: u.active, status: u.status || 'approved' });
+  })
+);
+
+// Add days of access (renewal). Counts from the current end date if it has not passed yet.
+router.post(
+  '/:id/extend',
+  wrap(async (req, res) => {
+    const u = await target(req.params.id);
+    if (u.role !== 'host') throw new UserError('Admins do not expire');
+    const days = Math.min(400, Math.max(1, Number(req.body.days) || 30));
+    u.accessUntil = extendAccess(u.accessUntil, days);
+    await u.save();
+    res.json({ ok: true, accessUntil: u.accessUntil });
   })
 );
 
@@ -59,6 +81,7 @@ router.post(
     if (!plan || plan.kind !== 'subscription') throw new UserError('Choose a venue or pro plan to grant');
     const days = Math.min(400, Math.max(1, Number(req.body.days) || plan.days));
     u.subscription = extendSubscription(u.subscription, { ...plan, days });
+    if (u.role === 'host' && (!u.accessUntil || new Date(u.accessUntil) < u.subscription.until)) u.accessUntil = u.subscription.until;
     await u.save();
     res.json({ ok: true, subscription: u.subscription });
   })

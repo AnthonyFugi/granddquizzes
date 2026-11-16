@@ -77,11 +77,32 @@ export async function ensureAdmin({ log = console.log } = {}) {
   return user;
 }
 
+export async function seedMissingCategories({ log = console.log } = {}) {
+  const { categories, bank } = loadSeed();
+  const have = new Set((await Category.find({}, 'slug').lean()).map((c) => c.slug));
+  const missing = categories.filter((c) => !have.has(c.slug));
+  if (!missing.length) return 0;
+  for (const c of missing) {
+    const doc = await Category.create({ slug: c.slug, name: c.name, description: c.description, icon: c.icon, order: c.order });
+    const rows = (bank[c.slug] || []).map(([text, correct, wrong, difficulty, explanation = '']) => {
+      const options = shuffle([correct, ...wrong]);
+      return { key: makeKey(String(doc._id), text), category: doc._id, text, options, correctIndex: options.indexOf(correct), difficulty, explanation, active: true };
+    });
+    if (rows.length) await Question.insertMany(rows, { ordered: false });
+    log(`Added new category "${c.name}" with ${rows.length} questions`);
+  }
+  return missing.length;
+}
+
 // Called on server start: fills an empty database so the first deployment works straight away.
 export async function bootstrap() {
   try {
-    if (process.env.AUTO_SEED !== 'false' && (await Question.estimatedDocumentCount()) === 0) {
-      await runSeed();
+    if (process.env.AUTO_SEED !== 'false') {
+      const empty = (await Question.estimatedDocumentCount()) === 0;
+      // Empty database: seed everything. Otherwise add only categories the live database does not have yet
+      // (e.g. a newly shipped one), with their questions; existing edits are never touched.
+      if (empty) await runSeed();
+      else await seedMissingCategories();
     }
     await ensureAdmin();
   } catch (e) {
