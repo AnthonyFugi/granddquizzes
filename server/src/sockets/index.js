@@ -1,6 +1,7 @@
 import { GameSession } from '../services/GameSession.js';
 import { UserError } from '../services/errors.js';
 import { config } from '../config/env.js';
+import { autopilotStep } from '../services/autopilot.js';
 
 const room = (code) => `quiz:${code}`;
 const ENDED_GRACE_MS = 15 * 60 * 1000; // keep an ended session around so phones can still show results
@@ -34,6 +35,62 @@ export function registerSockets(io, deps) {
     pending.add(session.code);
     setTimeout(() => broadcast(session), 150);
   }
+
+  async function openSession(event, { auto = false } = {}) {
+    let session = store.getByEvent(event.id);
+    if (session) return session;
+    const questions = await deps.loadQuestions(event);
+    if (!questions.length) throw new UserError('No questions are available for the chosen categories');
+    session = new GameSession({
+      code: event.joinCode,
+      eventId: event.id,
+      title: event.title,
+      prizes: event.prizes,
+      questions,
+      timeLimit: event.timeLimit,
+      maxTeamSize: config.maxTeamSize,
+      maxPlayers: event.maxPlayers ?? Infinity,
+      branding: event.branding || { poweredBy: true },
+    });
+    session.onChange = () => broadcast(session);
+    session.auto = auto;
+    session.startAt = event.scheduledFor || 0;
+    store.add(session);
+    await deps.markLive?.(event);
+    return session;
+  }
+
+  async function finish(s) {
+    try {
+      await deps.persistEnd?.(s);
+    } catch (e) {
+      console.error('Could not save results', e);
+    }
+    setTimeout(() => store.remove(s.code), ENDED_GRACE_MS).unref?.();
+  }
+
+  // Scheduled quizzes: the waiting room opens a little before the start time, and the quiz runs itself
+  // at the scheduled time unless the quiz master has opened the console and taken over.
+  let ticking = false;
+  async function tick() {
+    if (ticking) return;
+    ticking = true;
+    try {
+      for (const ev of (await deps.dueEvents?.()) || []) {
+        try { await openSession(ev, { auto: true }); } catch (e) { console.error('Could not open scheduled quiz', ev.title, e.message); }
+      }
+      for (const s of store.byCode.values()) {
+        const r = autopilotStep(s);
+        if (r) broadcast(s);
+        if (r === 'ended') await finish(s);
+      }
+    } catch (e) {
+      console.error('Scheduler error', e);
+    } finally {
+      ticking = false;
+    }
+  }
+  if (deps.dueEvents) setInterval(tick, 5000).unref?.();
 
   function on(socket, event, handler) {
     socket.on(event, async (data, cb) => {
@@ -72,25 +129,8 @@ export function registerSockets(io, deps) {
     // ---------- host ----------
     on(socket, 'host:open', async ({ token, eventId }) => {
       const event = await deps.authorizeHost(token, eventId);
-      let session = store.getByEvent(event.id);
-      if (!session) {
-        const questions = await deps.loadQuestions(event);
-        if (!questions.length) throw new UserError('No questions are available for the chosen categories');
-        session = new GameSession({
-          code: event.joinCode,
-          eventId: event.id,
-          title: event.title,
-          prizes: event.prizes,
-          questions,
-          timeLimit: event.timeLimit,
-          maxTeamSize: config.maxTeamSize,
-          maxPlayers: event.maxPlayers ?? Infinity,
-          branding: event.branding || { poweredBy: true },
-        });
-        session.onChange = () => broadcast(session);
-        store.add(session);
-        await deps.markLive?.(event);
-      }
+      const session = await openSession(event);
+      session.auto = false; // the quiz master is here and in control
       // Re-read the plan each time the console opens, so an upgrade paid mid-event takes effect straight away
       if (event.maxPlayers != null) session.maxPlayers = event.maxPlayers;
       if (event.branding) session.branding = event.branding;
@@ -121,12 +161,7 @@ export function registerSockets(io, deps) {
       const s = hostSession();
       s.end();
       broadcast(s);
-      try {
-        await deps.persistEnd?.(s);
-      } catch (e) {
-        console.error('Could not save results', e);
-      }
-      setTimeout(() => store.remove(s.code), ENDED_GRACE_MS).unref?.();
+      await finish(s);
     });
     on(socket, 'host:setLeader', ({ teamId, playerId }) => {
       const s = hostSession();

@@ -208,7 +208,7 @@ function CreateEvent({ cats, onCancel, onCreated, editing, initial, initialPicke
           <BrandingForm value={brand} onChange={setBrand} />
         </details>
       )}
-      <div className="field"><label htmlFor="when">Scheduled for (optional)</label><input id="when" type="datetime-local" value={f.scheduledFor} onChange={set('scheduledFor')} /></div>
+      <div className="field"><label htmlFor="when">Scheduled for (optional)</label><input id="when" type="datetime-local" min={toLocalInput(new Date())} value={f.scheduledFor} onChange={set('scheduledFor')} /><span className="muted small">The waiting room opens 15 minutes before this time. At this time the quiz starts by itself once a player has joined, unless you have opened the console and taken over. Need more time? Edit the quiz and move it to a later time. Leave it empty to start it yourself.</span></div>
       {err && <p className="error" role="alert">{err}</p>}
       <div className="row"><button className="btn" disabled={busy}>{editing ? 'Save changes' : 'Create event'}</button><button type="button" className="btn secondary" onClick={onCancel}>Cancel</button></div>
     </form>

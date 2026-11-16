@@ -8,6 +8,24 @@ import { UserError } from '../services/errors.js';
 import { store } from '../services/sessionStore.js';
 import { entitlementsFor } from '../services/plans.js';
 import { publicBranding } from '../services/branding.js';
+import { AUTO_OPEN_EARLY_MS } from '../services/autopilot.js';
+
+function summarize(event, host) {
+  const ent = entitlementsFor({ eventTier: event.tier, host });
+  return {
+    maxPlayers: ent.maxPlayers,
+    branding: publicBranding(event.branding, ent, event.joinCode),
+    id: String(event._id),
+    title: event.title,
+    joinCode: event.joinCode,
+    categories: event.categories,
+    questionCount: event.questionCount,
+    timeLimit: event.timeLimit,
+    difficulty: event.difficulty,
+    prizes: event.prizes.map((p) => ({ place: p.place, label: p.label })),
+    scheduledFor: event.scheduledFor ? new Date(event.scheduledFor).getTime() : null,
+  };
+}
 
 export const mongoDeps = {
   store,
@@ -31,19 +49,19 @@ export const mongoDeps = {
     }
     if (event.status === 'ended') throw new UserError('This event has already ended');
     const host = String(event.host) === String(user._id) ? user : await User.findById(event.host);
-    const ent = entitlementsFor({ eventTier: event.tier, host });
-    return {
-      maxPlayers: ent.maxPlayers,
-      branding: publicBranding(event.branding, ent, event.joinCode),
-      id: String(event._id),
-      title: event.title,
-      joinCode: event.joinCode,
-      categories: event.categories,
-      questionCount: event.questionCount,
-      timeLimit: event.timeLimit,
-      difficulty: event.difficulty,
-      prizes: event.prizes.map((p) => ({ place: p.place, label: p.label })),
-    };
+    return summarize(event, host);
+  },
+
+  // Scheduled events whose waiting room should be open by now (and not abandoned long ago)
+  async dueEvents(now = Date.now()) {
+    const events = await Event.find({ status: 'scheduled', scheduledFor: { $lte: new Date(now + AUTO_OPEN_EARLY_MS), $gte: new Date(now - 12 * 3600 * 1000) } });
+    const out = [];
+    for (const ev of events) {
+      const host = await User.findById(ev.host);
+      if (!host || host.active === false || host.status === 'pending' || host.status === 'rejected' || accessExpired(host)) continue;
+      out.push(summarize(ev, host));
+    }
+    return out;
   },
 
   loadQuestions(event) {

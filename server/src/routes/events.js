@@ -97,14 +97,20 @@ async function readSettings(b) {
       .slice(0, 5)
       .map((p, i) => ({ place: Number(p.place) || i + 1, label: String(p.label || '').trim().slice(0, 80) }))
       .filter((p) => p.label);
-  return { title, categories, questionCount, timeLimit, difficulty, prizes };
+  let scheduledFor;
+  if (b.scheduledFor) {
+    scheduledFor = new Date(b.scheduledFor);
+    if (Number.isNaN(scheduledFor.getTime())) throw new UserError('That date and time is not valid');
+    if (scheduledFor.getTime() < Date.now() - 5 * 60000) throw new UserError('The scheduled time has already passed. Pick a time from now onwards, or leave it empty');
+  }
+  return { title, categories, questionCount, timeLimit, difficulty, prizes, scheduledFor };
 }
 
 router.post(
   '/',
   wrap(async (req, res) => {
     const b = req.body;
-    const { title, categories, questionCount, timeLimit, difficulty, prizes } = await readSettings(b);
+    const { title, categories, questionCount, timeLimit, difficulty, prizes, scheduledFor } = await readSettings(b);
 
     let event;
     for (let attempt = 0; attempt < 8; attempt++) {
@@ -119,7 +125,7 @@ router.post(
           difficulty,
           prizes,
           branding: brandingForSave(b.branding),
-          scheduledFor: b.scheduledFor ? new Date(b.scheduledFor) : undefined,
+          scheduledFor,
         });
         break;
       } catch (e) {
@@ -157,16 +163,25 @@ router.put(
     if (ev.status === 'ended') throw new UserError('This event has already ended');
     // Opening the console only makes a waiting room. Settings stay editable until the quiz actually starts and nobody is waiting.
     const live = store.getByEvent(ev._id);
-    if (live) {
-      if (live.status !== 'lobby' || live.players.size > 0) throw new UserError('Players have joined or the quiz has started, so its settings are locked');
-      store.remove(live.code);
-      ev.status = 'scheduled';
-    } else if (ev.status !== 'scheduled') {
-      throw new UserError('This event has already started, so its quiz settings are locked');
+    if (live && live.status !== 'lobby') throw new UserError('The quiz has started, so its settings are locked');
+    if (live && live.players.size > 0) {
+      // People are already waiting: only the start time can move, and the quiz stays open for them
+      const when = req.body.scheduledFor ? new Date(req.body.scheduledFor) : null;
+      if (when && (Number.isNaN(when.getTime()) || when.getTime() < Date.now() - 5 * 60000)) throw new UserError('Pick a start time from now onwards');
+      ev.scheduledFor = when || undefined;
+      await ev.save();
+      live.startAt = when ? when.getTime() : 0;
+      live.autoGo = null;
+      live.auto = !!when; // with a start time the quiz starts itself then; with none, the quiz master starts it
+      live.onChange();
+      const out = ev.toObject();
+      delete out.branding?.logo;
+      return res.json({ ...out, onlyTimeChanged: true });
     }
+    if (live) store.remove(live.code);
+    if (ev.status === 'live') ev.status = 'scheduled'; // opened but empty, or no game running any more: safe to reopen
     const set = await readSettings(req.body);
     Object.assign(ev, set);
-    ev.scheduledFor = req.body.scheduledFor ? new Date(req.body.scheduledFor) : undefined;
     await ev.save();
     const out = ev.toObject();
     delete out.branding?.logo;
