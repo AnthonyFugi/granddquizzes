@@ -103,7 +103,7 @@ function EventRow({ ev, onDelete, onChanged }) {
         {ev.status !== 'ended' && <Link className="btn small" to={`/host/${ev._id}`}>{ev.status === 'live' ? 'Return to console' : 'Open console'}</Link>}
         <button className="btn secondary small" onClick={toggle}>Registrations ({ev.registrations})</button>
         {ev.status !== 'ended' && <Link className="btn secondary small" to={`/poster/${ev.joinCode}`}>QR poster</Link>}
-        {ev.status === 'scheduled' && <button className="btn secondary small" onClick={() => { setEditingQuiz(!editingQuiz); setEditing(false); }}>Edit quiz</button>}
+        {ev.status !== 'ended' && <button className="btn secondary small" onClick={() => { setEditingQuiz(!editingQuiz); setEditing(false); }}>Edit quiz</button>}
         {ev.status !== 'ended' && <button className="btn secondary small" onClick={() => { setEditing(!editing); setEditingQuiz(false); }}>Look and sponsors</button>}
         {ev.status !== 'ended' && ev.entitlements?.via !== 'subscription' && ev.entitlements?.maxPlayers < 300 && <Link className="btn copper small" to={`/host/billing?event=${ev._id}`}>Upgrade</Link>}
         <button className="btn danger small" onClick={onDelete}>Delete</button>

@@ -154,8 +154,16 @@ router.put(
   wrap(async (req, res) => {
     const ev = await Event.findById(req.params.id);
     if (!ev || (req.user.role !== 'admin' && String(ev.host) !== String(req.user._id))) throw new UserError('Event not found', 404);
-    if (ev.status !== 'scheduled') throw new UserError('This event has already started, so its quiz settings are locked');
-    if (store.getByEvent(ev._id)) throw new UserError('This event is open in the console. Close it first to change settings');
+    if (ev.status === 'ended') throw new UserError('This event has already ended');
+    // Opening the console only makes a waiting room. Settings stay editable until the quiz actually starts and nobody is waiting.
+    const live = store.getByEvent(ev._id);
+    if (live) {
+      if (live.status !== 'lobby' || live.players.size > 0) throw new UserError('Players have joined or the quiz has started, so its settings are locked');
+      store.remove(live.code);
+      ev.status = 'scheduled';
+    } else if (ev.status !== 'scheduled') {
+      throw new UserError('This event has already started, so its quiz settings are locked');
+    }
     const set = await readSettings(req.body);
     Object.assign(ev, set);
     ev.scheduledFor = req.body.scheduledFor ? new Date(req.body.scheduledFor) : undefined;
