@@ -21,7 +21,7 @@ cp .env.example .env        # set MONGODB_URI, JWT_SECRET, ADMIN_EMAIL, ADMIN_PA
 npm install
 npm run validate            # checks the seed files (no database needed)
 npm test                    # plays a full quiz over real sockets (no database needed)
-npm run dev                 # on first start the DB is filled with 11 categories / 256 questions
+npm run dev                 # on first start the DB is filled with 11 categories / 302 questions
                             # and the admin account is created from ADMIN_EMAIL / ADMIN_PASSWORD
 
 cd ../client && npm install && npm run dev    # http://localhost:5173, proxies /api and sockets to the server on :5001
@@ -36,7 +36,7 @@ npm run seed          # add anything missing; never overwrites edits or your own
 npm run seed:reset    # re-insert the seed questions with fresh answer order (your own questions untouched)
 ```
 
-## Seed content (256 questions)
+## Seed content (302 questions)
 
 | Category | Qs | Category | Qs |
 |---|---|---|---|

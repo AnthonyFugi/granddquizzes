@@ -80,6 +80,7 @@ function Events() {
 function EventRow({ ev, onDelete, onChanged }) {
   const [regs, setRegs] = useState(null);
   const [editing, setEditing] = useState(false);
+  const [editingQuiz, setEditingQuiz] = useState(false);
   const [open, setOpen] = useState(false);
   const toggle = async () => {
     if (!open && regs === null) setRegs(await api(`/events/${ev._id}/registrations`).catch(() => []));
@@ -102,10 +103,12 @@ function EventRow({ ev, onDelete, onChanged }) {
         {ev.status !== 'ended' && <Link className="btn small" to={`/host/${ev._id}`}>{ev.status === 'live' ? 'Return to console' : 'Open console'}</Link>}
         <button className="btn secondary small" onClick={toggle}>Registrations ({ev.registrations})</button>
         {ev.status !== 'ended' && <Link className="btn secondary small" to={`/poster/${ev.joinCode}`}>QR poster</Link>}
-        {ev.status !== 'ended' && <button className="btn secondary small" onClick={() => setEditing(!editing)}>Look and sponsors</button>}
+        {ev.status === 'scheduled' && <button className="btn secondary small" onClick={() => { setEditingQuiz(!editingQuiz); setEditing(false); }}>Edit quiz</button>}
+        {ev.status !== 'ended' && <button className="btn secondary small" onClick={() => { setEditing(!editing); setEditingQuiz(false); }}>Look and sponsors</button>}
         {ev.status !== 'ended' && ev.entitlements?.via !== 'subscription' && ev.entitlements?.maxPlayers < 300 && <Link className="btn copper small" to={`/host/billing?event=${ev._id}`}>Upgrade</Link>}
         <button className="btn danger small" onClick={onDelete}>Delete</button>
       </div>
+      {editingQuiz && <EditEvent ev={ev} onSaved={() => { setEditingQuiz(false); onChanged(); }} onCancel={() => setEditingQuiz(false)} />}
       {editing && <EditBranding ev={ev} onSaved={() => { setEditing(false); onChanged(); }} onCancel={() => setEditing(false)} />}
       {open && (
         <div style={{ marginTop: 10 }}>
@@ -125,9 +128,27 @@ function EventRow({ ev, onDelete, onChanged }) {
   );
 }
 
-function CreateEvent({ cats, onCancel, onCreated }) {
-  const [f, setF] = useState({ title: '', questionCount: 15, timeLimit: 20, difficulty: 'mixed', scheduledFor: '', p1: '', p2: '', p3: '' });
-  const [picked, setPicked] = useState(new Set());
+const toLocalInput = (d) => { if (!d) return ''; const x = new Date(d); return new Date(x.getTime() - x.getTimezoneOffset() * 60000).toISOString().slice(0, 16); };
+
+function EditEvent({ ev, onSaved, onCancel }) {
+  const [cats, setCats] = useState([]);
+  useEffect(() => { api('/categories').then(setCats).catch(() => {}); }, []);
+  const pz = (n) => ev.prizes?.find((p) => p.place === n)?.label || '';
+  return (
+    <CreateEvent
+      cats={cats}
+      editing={ev}
+      initial={{ title: ev.title, questionCount: ev.questionCount, timeLimit: ev.timeLimit, difficulty: ev.difficulty || 'mixed', scheduledFor: toLocalInput(ev.scheduledFor), p1: pz(1), p2: pz(2), p3: pz(3) }}
+      initialPicked={(ev.categories || []).map((c) => c._id || c)}
+      onCancel={onCancel}
+      onCreated={onSaved}
+    />
+  );
+}
+
+function CreateEvent({ cats, onCancel, onCreated, editing, initial, initialPicked }) {
+  const [f, setF] = useState(initial || { title: '', questionCount: 15, timeLimit: 20, difficulty: 'mixed', scheduledFor: '', p1: '', p2: '', p3: '' });
+  const [picked, setPicked] = useState(new Set(initialPicked || []));
   const [brand, setBrand] = useState(emptyBranding);
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
@@ -138,11 +159,11 @@ function CreateEvent({ cats, onCancel, onCreated }) {
     e.preventDefault();
     setBusy(true);
     try {
-      const ev = await api('/events', {
-        method: 'POST',
+      const ev = await api(editing ? `/events/${editing._id}` : '/events', {
+        method: editing ? 'PUT' : 'POST',
         body: {
           title: f.title, questionCount: Number(f.questionCount), timeLimit: Number(f.timeLimit), difficulty: f.difficulty,
-          categories: [...picked], scheduledFor: f.scheduledFor || undefined, branding: brandingBody(brand),
+          categories: [...picked], scheduledFor: f.scheduledFor || undefined, ...(editing ? {} : { branding: brandingBody(brand) }),
           prizes: [f.p1, f.p2, f.p3].map((label, i) => ({ place: i + 1, label })).filter((p) => p.label.trim()),
         },
       });
@@ -152,7 +173,7 @@ function CreateEvent({ cats, onCancel, onCreated }) {
 
   return (
     <form onSubmit={submit} className="section" style={{ maxWidth: 680 }}>
-      <h2>New event</h2>
+      <h2>{editing ? 'Edit quiz' : 'New event'}</h2>
       <div className="field"><label htmlFor="t">Event name</label><input id="t" value={f.title} onChange={set('title')} maxLength={100} placeholder="Friday quiz night" required /></div>
       <div className="field">
         <span className="label">Categories</span>
@@ -181,13 +202,15 @@ function CreateEvent({ cats, onCancel, onCreated }) {
         <input aria-label="Second prize" placeholder="2nd place prize" value={f.p2} onChange={set('p2')} />
         <input aria-label="Third prize" placeholder="3rd place prize" value={f.p3} onChange={set('p3')} />
       </div>
-      <details className="field" style={{ marginBottom: 16 }}>
-        <summary style={{ fontWeight: 600, cursor: 'pointer', minHeight: 44, display: 'flex', alignItems: 'center' }}>Your logo, colour and sponsors (optional)</summary>
-        <BrandingForm value={brand} onChange={setBrand} />
-      </details>
+      {!editing && (
+        <details className="field" style={{ marginBottom: 16 }}>
+          <summary style={{ fontWeight: 600, cursor: 'pointer', minHeight: 44, display: 'flex', alignItems: 'center' }}>Your logo, colour and sponsors (optional)</summary>
+          <BrandingForm value={brand} onChange={setBrand} />
+        </details>
+      )}
       <div className="field"><label htmlFor="when">Scheduled for (optional)</label><input id="when" type="datetime-local" value={f.scheduledFor} onChange={set('scheduledFor')} /></div>
       {err && <p className="error" role="alert">{err}</p>}
-      <div className="row"><button className="btn" disabled={busy}>Create event</button><button type="button" className="btn secondary" onClick={onCancel}>Cancel</button></div>
+      <div className="row"><button className="btn" disabled={busy}>{editing ? 'Save changes' : 'Create event'}</button><button type="button" className="btn secondary" onClick={onCancel}>Cancel</button></div>
     </form>
   );
 }

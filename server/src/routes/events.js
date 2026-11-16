@@ -70,10 +70,8 @@ router.post(
 router.use(requireAuth, requireRole('host', 'admin'));
 router.use((req, res, next) => (['POST', 'PUT', 'PATCH'].includes(req.method) ? requireCurrentAccess(req, res, next) : next()));
 
-router.post(
-  '/',
-  wrap(async (req, res) => {
-    const b = req.body;
+// Validates the quiz settings shared by create and edit. Throws UserError with a plain message.
+async function readSettings(b) {
     const title = String(b.title || '').trim();
     if (title.length < 3) throw new UserError('Give the event a title');
     const questionCount = Math.min(100, Math.max(3, Number(b.questionCount) || 10));
@@ -99,6 +97,14 @@ router.post(
       .slice(0, 5)
       .map((p, i) => ({ place: Number(p.place) || i + 1, label: String(p.label || '').trim().slice(0, 80) }))
       .filter((p) => p.label);
+  return { title, categories, questionCount, timeLimit, difficulty, prizes };
+}
+
+router.post(
+  '/',
+  wrap(async (req, res) => {
+    const b = req.body;
+    const { title, categories, questionCount, timeLimit, difficulty, prizes } = await readSettings(b);
 
     let event;
     for (let attempt = 0; attempt < 8; attempt++) {
@@ -139,6 +145,24 @@ router.get(
     ]);
     const map = new Map(counts.map((c) => [String(c._id), c.n]));
     res.json(events.map((e) => ({ ...e, registrations: map.get(String(e._id)) || 0, entitlements: ents.get(String(e._id)) })));
+  })
+);
+
+// Change an event's quiz settings (name, categories, questions, timer, difficulty, prizes, schedule). Only before it starts.
+router.put(
+  '/:id',
+  wrap(async (req, res) => {
+    const ev = await Event.findById(req.params.id);
+    if (!ev || (req.user.role !== 'admin' && String(ev.host) !== String(req.user._id))) throw new UserError('Event not found', 404);
+    if (ev.status !== 'scheduled') throw new UserError('This event has already started, so its quiz settings are locked');
+    if (store.getByEvent(ev._id)) throw new UserError('This event is open in the console. Close it first to change settings');
+    const set = await readSettings(req.body);
+    Object.assign(ev, set);
+    ev.scheduledFor = req.body.scheduledFor ? new Date(req.body.scheduledFor) : undefined;
+    await ev.save();
+    const out = ev.toObject();
+    delete out.branding?.logo;
+    res.json(out);
   })
 );
 
