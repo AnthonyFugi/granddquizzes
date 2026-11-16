@@ -31,13 +31,13 @@ export default function HostSignup() {
         {sent ? (
           <div>
             <p className="notice ok" role="status">Thanks, {f.name.split(' ')[0]}. Your request is with FugiPay. We review each new quiz master and will contact you on {f.phone || f.email} once your account is approved.</p>
-            <p className="small">Need it sooner? Call or WhatsApp +260 777 210 641.</p>
+            <p className="small">Need it sooner? Call or WhatsApp +260 777 210 641, or <Link to="/contact">send us a message</Link>.</p>
             <Link className="btn secondary" to="/">Back to Granddquiz</Link>
           </div>
         ) : <>
         <p className="muted">Request a quiz master account. FugiPay approves each new account before you can sign in. Plans give you bigger rooms, your own logo and sponsors.</p>
         {cfg && !cfg.hostSignup ? (
-          <p className="notice">Quiz master sign-up is closed right now. Contact FugiPay to get an account.</p>
+          <p className="notice">Quiz master sign-up is closed right now. <Link to="/contact">Contact FugiPay</Link> to get an account.</p>
         ) : (
           <form onSubmit={submit}>
             <div className="field"><label htmlFor="su-name">Your name</label><input id="su-name" autoComplete="name" value={f.name} onChange={set('name')} required minLength={2} /></div>

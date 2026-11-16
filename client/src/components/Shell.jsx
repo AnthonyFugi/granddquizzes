@@ -17,6 +17,8 @@ export default function Shell({ children, wide = false }) {
           {user && ['host', 'admin'].includes(user.role) && <Link to="/host">Events</Link>}
           {user && ['host', 'admin'].includes(user.role) && <Link to="/host/billing">Plans</Link>}
           {user?.role === 'admin' && <Link to="/admin/hosts">Quiz masters</Link>}
+          {user?.role === 'admin' && <Link to="/admin/messages">Messages</Link>}
+          <Link to="/contact">Contact</Link>
           {user?.role === 'admin' && <Link to="/admin">Question bank</Link>}
           {user ? (
             <button className="btn quiet" onClick={() => { logout(); nav('/'); }}>Sign out</button>

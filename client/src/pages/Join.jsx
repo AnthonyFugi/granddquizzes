@@ -61,7 +61,7 @@ export default function Join() {
         <p className="muted small" style={{ marginTop: 18 }}>No account needed. If you finish in the top 10, your nickname and score are kept for a limited time so the host can see the results, then deleted automatically. Nothing else is saved unless you register.</p>
         <hr className="divider" />
         <p>Playing in a coming event with your group? <Link to="/register">Register your team</Link>.</p>
-        <p className="small"><Link to="/host">Quiz master sign in</Link></p>
+        <p className="small"><Link to="/host">Quiz master sign in</Link> · <Link to="/contact">Contact us</Link></p>
       </main>
     </>
   );

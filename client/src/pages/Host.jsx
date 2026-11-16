@@ -64,7 +64,7 @@ function Events() {
         <h1 style={{ marginBottom: 0 }}>Your events</h1>
         {!creating && !user?.expired && <button className="btn copper" onClick={() => setCreating(true)}>New event</button>}
       </div>
-      {user?.expired && <p className="notice bad" role="alert">Your access ended on {new Date(user.accessUntil).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}. You can still view and download past results. To run events again, buy a plan on the <Link to="/host/billing">Plans</Link> page or call +260 777 210 641.</p>}
+      {user?.expired && <p className="notice bad" role="alert">Your access ended on {new Date(user.accessUntil).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}. You can still view and download past results. To run events again, buy a plan on the <Link to="/host/billing">Plans</Link> page or <Link to="/contact">contact FugiPay</Link> (+260 777 210 641).</p>}
       {!user?.expired && dayLeft !== null && dayLeft <= 7 && <p className="notice" role="status">Your access ends in {dayLeft <= 1 ? 'a day' : `${dayLeft} days`}. A plan on the <Link to="/host/billing">Plans</Link> page keeps it going.</p>}
       {err && <p className="error" role="alert">{err}</p>}
       {creating && <CreateEvent cats={cats} onCancel={() => setCreating(false)} onCreated={(ev) => nav(`/host/${ev._id}`)} />}

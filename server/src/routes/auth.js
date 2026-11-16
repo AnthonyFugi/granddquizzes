@@ -6,6 +6,7 @@ import { wrap } from '../middleware/errors.js';
 import { UserError } from '../services/errors.js';
 import { config } from '../config/env.js';
 import { rateLimit } from '../middleware/rateLimit.js';
+import { notify, adminAddress } from '../services/mailer.js';
 
 const router = Router();
 const limit = rateLimit({ max: 40 });
@@ -38,7 +39,12 @@ router.post(
     }
     // A new quiz master gets no session until FugiPay approves the account
     if (wantsHost) {
-      await createUser({ ...req.body, role: 'host', status: 'pending' });
+      const created = await createUser({ ...req.body, role: 'host', status: 'pending' });
+      notify({
+        to: adminAddress(),
+        subject: `New quiz master request: ${created.name}`,
+        text: `Someone asked for a quiz master account on Granddquiz\n\nName: ${created.name}\nEmail: ${created.email}\nPhone: ${created.phone || '-'}\n\nApprove or decline: https://granddquiz.web.app/admin/hosts`,
+      });
       return res.status(201).json({ pending: true, message: 'Thanks. FugiPay will review your account and contact you. You can sign in once it is approved.' });
     }
     const user = await createUser({ ...req.body, role: 'player' });

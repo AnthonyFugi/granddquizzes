@@ -71,7 +71,7 @@ function Plans() {
       <h1>Plans and billing</h1>
       {confirm && <p className={`notice ${confirm.status}`} role="status">{confirm.text} <button className="btn quiet small" onClick={() => { setConfirm(null); setParams({}); }}>Dismiss</button></p>}
       {err && <p className="error" role="alert">{err}</p>}
-      {!data.paymentsEnabled && <p className="notice">Online payment is not switched on yet. Contact FugiPay to pay by mobile money or bank transfer and we will activate your plan.</p>}
+      {!data.paymentsEnabled && <p className="notice">Online payment is not switched on yet. <Link to="/contact">Contact FugiPay</Link> to pay by mobile money or bank transfer and we will activate your plan.</p>}
 
       <div className="current">
         {me.subscription

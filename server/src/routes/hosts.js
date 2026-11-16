@@ -5,6 +5,7 @@ import { requireAuth, requireRole } from '../middleware/auth.js';
 import { wrap } from '../middleware/errors.js';
 import { UserError } from '../services/errors.js';
 import { extendSubscription, getPlan } from '../services/plans.js';
+import { notify } from '../services/mailer.js';
 
 // Admin only: see quiz masters, switch accounts off, and give a plan to a pilot venue or a customer who paid
 // by bank transfer or mobile money outside the app.
@@ -56,6 +57,15 @@ router.patch(
       u.active = req.body.active;
     }
     await u.save();
+    if (['approved', 'rejected'].includes(req.body.status) && u.role === 'host') {
+      const first = String(u.name).split(' ')[0];
+      if (req.body.status === 'approved') {
+        const until = u.accessUntil ? new Date(u.accessUntil).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) : '';
+        notify({ to: u.email, subject: 'Your Granddquiz account is approved', text: `Hello ${first},\n\nYour quiz master account on Granddquiz has been approved. You can sign in now and create your first event:\nhttps://granddquiz.web.app/host\n${until ? `\nYour access runs until ${until}. You can renew with a plan on the Plans page, or contact us.\n` : ''}\nNeed help? Reply to this email or WhatsApp +260 777 210 641.\n\nFugiPay Technology Limited` });
+      } else {
+        notify({ to: u.email, subject: 'About your Granddquiz account request', text: `Hello ${first},\n\nThank you for your interest in Granddquiz. We are not able to approve your quiz master account at the moment. If you think this is a mistake, or you would like to discuss it, reply to this email or WhatsApp +260 777 210 641.\n\nFugiPay Technology Limited` });
+      }
+    }
     res.json({ ok: true, active: u.active, status: u.status || 'approved' });
   })
 );
