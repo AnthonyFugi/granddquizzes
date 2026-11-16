@@ -163,7 +163,7 @@ function CreateEvent({ cats, onCancel, onCreated, editing, initial, initialPicke
         method: editing ? 'PUT' : 'POST',
         body: {
           title: f.title, questionCount: Number(f.questionCount), timeLimit: Number(f.timeLimit), difficulty: f.difficulty,
-          categories: [...picked], scheduledFor: f.scheduledFor || undefined, ...(editing ? {} : { branding: brandingBody(brand) }),
+          categories: [...picked], scheduledFor: f.scheduledFor ? new Date(f.scheduledFor).toISOString() : undefined, ...(editing ? {} : { branding: brandingBody(brand) }),
           prizes: [f.p1, f.p2, f.p3].map((label, i) => ({ place: i + 1, label })).filter((p) => p.label.trim()),
         },
       });
