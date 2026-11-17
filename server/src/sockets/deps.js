@@ -22,6 +22,8 @@ function summarize(event, host) {
     questionCount: event.questionCount,
     timeLimit: event.timeLimit,
     difficulty: event.difficulty,
+    marks: event.marks ?? 10,
+    rounds: event.rounds !== false,
     prizes: event.prizes.map((p) => ({ place: p.place, label: p.label })),
     scheduledFor: event.scheduledFor ? new Date(event.scheduledFor).getTime() : null,
   };
@@ -69,11 +71,13 @@ export const mongoDeps = {
       categoryIds: event.categories,
       count: event.questionCount,
       difficulty: event.difficulty,
+      rounds: event.rounds,
     });
   },
 
   async markLive(event) {
-    await Event.updateOne({ _id: event.id }, { status: 'live' });
+    // Also covers playing an event again after it ended: old results and the delete date are cleared
+    await Event.updateOne({ _id: event.id }, { status: 'live', $unset: { endedAt: 1, purgeAt: 1, possible: 1 }, $set: { results: [] } });
   },
 
   // Only names and scores are kept, and MongoDB deletes them automatically after RETENTION_DAYS.
@@ -87,7 +91,7 @@ export const mongoDeps = {
     }));
     await Event.updateOne(
       { _id: session.eventId },
-      { status: 'ended', endedAt: new Date(session.endedAt), results, purgeAt }
+      { status: 'ended', endedAt: new Date(session.endedAt), results, purgeAt, possible: session.possibleScore() }
     );
     await Registration.updateMany({ event: session.eventId }, { purgeAt });
   },

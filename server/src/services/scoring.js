@@ -1,9 +1,8 @@
-// Correct answers earn 1000 points, dropping linearly to 500 as time runs out.
-// Wrong or missing answers earn nothing.
-export const MAX_POINTS = 1000;
-export const MIN_POINTS = 500;
+// Every question carries the same marks: a correct answer earns the full marks, a wrong or missing answer earns nothing.
+// Speed no longer changes the marks. It only breaks ties between players on the same total (see GameSession.standings).
+export const DEFAULT_MARKS = 10;
 
-export function pointsFor(elapsedMs, limitMs) {
-  const ratio = Math.min(Math.max(elapsedMs / limitMs, 0), 1);
-  return Math.round(MAX_POINTS - (MAX_POINTS - MIN_POINTS) * ratio);
+export function cleanMarks(n) {
+  const v = Math.round(Number(n));
+  return Number.isFinite(v) ? Math.min(100, Math.max(1, v)) : DEFAULT_MARKS;
 }

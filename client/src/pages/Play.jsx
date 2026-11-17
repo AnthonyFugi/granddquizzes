@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import Band from '../components/Band.jsx';
 import { CodeTiles } from '../components/Code.jsx';
-import { Leaderboard, Option, TimeNote, TimerBar, Waiting, ordinal } from '../components/Quiz.jsx';
+import { Leaderboard, Option, RoundBanner, ScoreText, TimeNote, TimerBar, Waiting, ordinal } from '../components/Quiz.jsx';
 import { useCountdown, usePlayer } from '../hooks/useQuiz.js';
 import { clearPlayer } from '../lib/socket.js';
 import { OrgMark, SponsorStrip } from '../components/Brand.jsx';
@@ -162,6 +162,7 @@ function Question({ state, me, act, clock }) {
 
   return (
     <div>
+      <RoundBanner round={q.round} />
       <div className="q-meta">
         <span className="muted">Question {q.index + 1} of {q.total}</span>
         <span className="chip">{q.category?.icon} {q.category?.name}</span>
@@ -191,9 +192,9 @@ function Reveal({ state, me }) {
     <div>
       <div className={`verdict ${good ? 'good' : 'bad'}`} role="status" aria-live="polite">
         <h1 style={{ marginBottom: 4 }}>{title}</h1>
-        {good && <div className="points">+{res.points.toLocaleString()}</div>}
+        {good && <div className="points">+{res.points.toLocaleString()} {res.points === 1 ? 'mark' : 'marks'}</div>}
         {me.teamId && <p className="muted small" style={{ margin: 0 }}>This is the answer {me.teamName} gave.</p>}
-        {me.rank && <p style={{ margin: '8px 0 0' }}>You are {ordinal(me.rank)} of {me.of} with {me.score.toLocaleString()} points.</p>}
+        {me.rank && <p style={{ margin: '8px 0 0' }}>You are {ordinal(me.rank)} of {me.of} with <strong><ScoreText score={me.score} possible={me.possible} /></strong> marks.</p>}
       </div>
       <h2 className="q-text" style={{ fontSize: '1.15rem' }}>{q.text}</h2>
       <div className="options">
@@ -202,8 +203,8 @@ function Reveal({ state, me }) {
         ))}
       </div>
       {reveal.explanation && <p style={{ marginTop: 16 }}>{reveal.explanation}</p>}
-      <h2 className="section">Leaderboard</h2>
-      <Leaderboard rows={state.leaderboard || []} meKey={meKeyOf(me)} limit={5} prizes={state.prizes} />
+      <h2 className="section">{q.round?.last ? `Standings after round ${q.round.number}` : 'Leaderboard'}</h2>
+      <Leaderboard rows={state.leaderboard || []} meKey={meKeyOf(me)} limit={5} prizes={state.prizes} possible={state.possible} />
       <Waiting>Waiting for the next question.</Waiting>
     </div>
   );
@@ -217,10 +218,10 @@ function Ended({ state, me, onLeave }) {
       {mine ? (
         <div className="verdict good"><h2 style={{ marginBottom: 4 }}>You won a prize.</h2><p style={{ margin: 0 }}>{mine.prize} for finishing {ordinal(mine.rank)}. Find the quiz master to collect it.</p></div>
       ) : me.rank ? (
-        <p>You finished {ordinal(me.rank)} of {me.of} with {me.score.toLocaleString()} points. Thanks for playing.</p>
+        <p>You finished {ordinal(me.rank)} of {me.of} with <strong><ScoreText score={me.score} possible={me.possible} /></strong> marks. Thanks for playing.</p>
       ) : null}
       <h2>Final standings</h2>
-      <Leaderboard rows={state.leaderboard || []} meKey={meKeyOf(me)} limit={10} prizes={state.prizes} />
+      <Leaderboard rows={state.leaderboard || []} meKey={meKeyOf(me)} limit={10} prizes={state.prizes} possible={state.possible} />
       <p className="muted small" style={{ marginTop: 18 }}>Only the top 10 nicknames and scores are kept, for a limited time, then deleted automatically. Registered players can sign up for the next event.</p>
       <button className="btn secondary" onClick={onLeave}>Done</button>
     </div>

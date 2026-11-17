@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import Shell from '../components/Shell.jsx';
 import { CodeTiles } from '../components/Code.jsx';
-import { Leaderboard, Option, TimerBar, Waiting } from '../components/Quiz.jsx';
+import { Leaderboard, Option, RoundBanner, ScoreText, TimerBar, Waiting } from '../components/Quiz.jsx';
 import { useCountdown, useHost } from '../hooks/useQuiz.js';
 import { useAuth } from '../lib/auth.jsx';
 import { downloadCsv, resultsCsv, resultsFilename } from '../lib/csv.js';
@@ -63,13 +63,15 @@ function Console({ eventId, token }) {
             <div className="stack">
               <h2>Lobby</h2>
               <p>Share the code or put the big screen on a projector. Start when everyone is in. Teams lock once the first question starts.</p>
-              <p className="muted">{meta.totalQuestions} questions ready, {state.timeLimit} seconds each. Every question is timed and locks automatically when the clock reaches zero.</p>
+              <p className="muted">{meta.totalQuestions} questions ready, {state.timeLimit} seconds each, {state.marks} marks for every correct answer ({state.maxPossible} in all). Every question is timed and locks automatically when the clock reaches zero.</p>
+              {state.rounds?.length > 1 && <p className="muted">Rounds: {state.rounds.map((r, i) => `${i + 1}. ${r.icon} ${r.name} (${r.size})`).join('   ')}</p>}
               <button className="btn" disabled={state.playerCount === 0} onClick={() => run('host:next')}>Start question 1</button>
             </div>
           )}
 
           {['question', 'locked', 'reveal'].includes(st) && q && (
             <div>
+              <RoundBanner round={q.round} />
               <div className="q-meta">
                 <span className="muted">Question {q.index + 1} of {q.total}</span>
                 <span className="chip">{q.category?.icon} {q.category?.name}</span>
@@ -89,7 +91,7 @@ function Console({ eventId, token }) {
                 {st === 'reveal' && info?.hasNext && <button className="btn" onClick={() => run('host:next')}>Next question</button>}
                 {st === 'reveal' && !info?.hasNext && <button className="btn copper" onClick={() => run('host:end')}>Finish quiz and show winners</button>}
               </div>
-              {st === 'reveal' && (<><h3 className="section">Leaderboard</h3><Leaderboard rows={state.leaderboard || []} limit={6} prizes={state.prizes} /></>)}
+              {st === 'reveal' && (<><h3 className="section">{q.round?.last ? `Standings after round ${q.round.number}` : 'Leaderboard'}</h3><Leaderboard rows={state.leaderboard || []} limit={6} prizes={state.prizes} possible={state.possible} /></>)}
             </div>
           )}
 
@@ -97,11 +99,12 @@ function Console({ eventId, token }) {
             <div>
               <h2>Quiz finished</h2>
               {state.winners?.length > 0 && (
-                <ul className="team-list">{state.winners.map((w) => <li key={w.key}><strong>{w.prize}</strong>: {w.name} ({w.score.toLocaleString()} points)</li>)}</ul>
+                <ul className="team-list">{state.winners.map((w) => <li key={w.key}><strong>{w.prize}</strong>: {w.name} (<ScoreText score={w.score} possible={state.possible} /> marks)</li>)}</ul>
               )}
-              <Leaderboard rows={state.leaderboard || []} limit={10} prizes={state.prizes} />
+              <Leaderboard rows={state.leaderboard || []} limit={10} prizes={state.prizes} possible={state.possible} />
               <div className="row" style={{ marginTop: 18 }}>
                 <button className="btn" onClick={() => downloadCsv(resultsFilename(state.title), resultsCsv(state))}>Download results (CSV)</button>
+                <button className="btn secondary" onClick={() => window.confirm('Play this quiz again from question 1 with the same questions? Scores go back to zero and the results above are cleared.') && run('host:restart')}>Play again</button>
                 <Link className="btn secondary" to="/host">Back to events</Link>
               </div>
               <p className="muted small">The full list is only available now. After you leave, the server keeps just the top 10 names and scores.</p>
@@ -110,7 +113,14 @@ function Console({ eventId, token }) {
 
           {msg && <p className="error" role="alert" style={{ marginTop: 14 }}>{msg}</p>}
           {st !== 'ended' && st !== 'lobby' && (
-            <button className="btn quiet small" style={{ marginTop: 24 }} onClick={() => window.confirm('End the quiz now and show the winners?') && run('host:end')}>End quiz early</button>
+            <div className="row" style={{ marginTop: 24 }}>
+              <button className="btn quiet small" onClick={() => window.confirm('End the quiz now and show the winners?') && run('host:end')}>End quiz early</button>
+              <button className="btn quiet small" onClick={() => window.confirm('Restart from question 1 now? Same questions, all scores go back to zero.') && run('host:restart')}>Restart quiz</button>
+              <button className="btn quiet small" onClick={() => window.confirm('Reset the quiz? Everyone stays in the room, scores go back to zero and a fresh set of questions is drawn. You start again from the waiting room.') && run('host:reset')}>Reset quiz</button>
+            </div>
+          )}
+          {st === 'lobby' && (
+            <button className="btn quiet small" style={{ marginTop: 24 }} onClick={() => run('host:reset')}>Draw a fresh set of questions</button>
           )}
         </section>
 

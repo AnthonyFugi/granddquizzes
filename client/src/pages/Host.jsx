@@ -92,8 +92,8 @@ function EventRow({ ev, onDelete, onChanged }) {
         <div>
           <h3 style={{ marginBottom: 4 }}>{ev.title} <span className={`status ${ev.status}`}>{ev.status}</span> <span className={`plan-badge ${ev.entitlements?.plan === 'free' ? '' : 'paid'}`}>{ev.entitlements ? `${ev.entitlements.planName}, up to ${ev.entitlements.maxPlayers} players` : ''}</span></h3>
           <div className="muted small">
-            {ev.questionCount} questions, {ev.timeLimit}s each
-            {ev.categories?.length ? `, ${ev.categories.map((c) => c.name).join(', ')}` : ', all categories'}
+            {ev.questionCount} questions, {ev.timeLimit}s each, {ev.marks || 10} marks per question ({ev.questionCount * (ev.marks || 10)} in all)
+            {ev.categories?.length ? `, ${ev.categories.map((c) => c.name).join(', ')}${ev.categories.length > 1 && ev.rounds !== false ? ' (one round each)' : ''}` : ', all categories'}
             {ev.scheduledFor ? `. Scheduled ${new Date(ev.scheduledFor).toLocaleString()}` : ''}
           </div>
         </div>
@@ -120,8 +120,8 @@ function EventRow({ ev, onDelete, onChanged }) {
       )}
       {ev.status === 'ended' && ev.results?.length > 0 && (
         <div className="row" style={{ marginTop: 10 }}>
-          <span className="small">Results: {ev.results.slice(0, 3).map((r) => `${r.rank}. ${r.name} (${r.score})`).join('   ')}</span>
-          <button className="btn quiet small" onClick={() => downloadCsv(resultsFilename(ev.title), resultsCsv({ prizes: ev.prizes, leaderboard: ev.results }))}>Download top {ev.results.length} (CSV)</button>
+          <span className="small">Results: {ev.results.slice(0, 3).map((r) => `${r.rank}. ${r.name} (${ev.possible ? `${r.score} / ${ev.possible}` : r.score})`).join('   ')}</span>
+          <button className="btn quiet small" onClick={() => downloadCsv(resultsFilename(ev.title), resultsCsv({ prizes: ev.prizes, leaderboard: ev.results, possible: ev.possible }))}>Download top {ev.results.length} (CSV)</button>
         </div>
       )}
     </div>
@@ -138,7 +138,7 @@ function EditEvent({ ev, onSaved, onCancel }) {
     <CreateEvent
       cats={cats}
       editing={ev}
-      initial={{ title: ev.title, questionCount: ev.questionCount, timeLimit: ev.timeLimit, difficulty: ev.difficulty || 'mixed', scheduledFor: toLocalInput(ev.scheduledFor), p1: pz(1), p2: pz(2), p3: pz(3) }}
+      initial={{ title: ev.title, questionCount: ev.questionCount, timeLimit: ev.timeLimit, difficulty: ev.difficulty || 'mixed', marks: ev.marks || 10, rounds: ev.rounds !== false, scheduledFor: toLocalInput(ev.scheduledFor), p1: pz(1), p2: pz(2), p3: pz(3) }}
       initialPicked={(ev.categories || []).map((c) => c._id || c)}
       onCancel={onCancel}
       onCreated={onSaved}
@@ -147,7 +147,7 @@ function EditEvent({ ev, onSaved, onCancel }) {
 }
 
 function CreateEvent({ cats, onCancel, onCreated, editing, initial, initialPicked }) {
-  const [f, setF] = useState(initial || { title: '', questionCount: 15, timeLimit: 20, difficulty: 'mixed', scheduledFor: '', p1: '', p2: '', p3: '' });
+  const [f, setF] = useState(initial || { title: '', questionCount: 15, timeLimit: 20, difficulty: 'challenging', marks: 10, rounds: true, scheduledFor: '', p1: '', p2: '', p3: '' });
   const [picked, setPicked] = useState(new Set(initialPicked || []));
   const [brand, setBrand] = useState(emptyBranding);
   const [err, setErr] = useState('');
@@ -162,7 +162,7 @@ function CreateEvent({ cats, onCancel, onCreated, editing, initial, initialPicke
       const ev = await api(editing ? `/events/${editing._id}` : '/events', {
         method: editing ? 'PUT' : 'POST',
         body: {
-          title: f.title, questionCount: Number(f.questionCount), timeLimit: Number(f.timeLimit), difficulty: f.difficulty,
+          title: f.title, questionCount: Number(f.questionCount), timeLimit: Number(f.timeLimit), difficulty: f.difficulty, marks: Number(f.marks) || 10, rounds: !!f.rounds,
           categories: [...picked], scheduledFor: f.scheduledFor ? new Date(f.scheduledFor).toISOString() : undefined, ...(editing ? {} : { branding: brandingBody(brand) }),
           prizes: [f.p1, f.p2, f.p3].map((label, i) => ({ place: i + 1, label })).filter((p) => p.label.trim()),
         },
@@ -177,7 +177,7 @@ function CreateEvent({ cats, onCancel, onCreated, editing, initial, initialPicke
       <div className="field"><label htmlFor="t">Event name</label><input id="t" value={f.title} onChange={set('title')} maxLength={100} placeholder="Friday quiz night" required /></div>
       <div className="field">
         <span className="label">Categories</span>
-        <span className="muted small">Pick any number. Pick none for a mixed bag across everything.</span>
+        <span className="muted small">Pick any number. Pick none for a mixed bag across everything. With several, the quiz can play one category at a time, in the order you tap them.</span>
         <div className="row">
           {cats.map((c) => (
             <button type="button" key={c._id} className={`chip ${picked.has(c._id) ? 'on' : ''}`} aria-pressed={picked.has(c._id)} onClick={() => toggle(c._id)}>
@@ -186,17 +186,23 @@ function CreateEvent({ cats, onCancel, onCreated, editing, initial, initialPicke
           ))}
         </div>
       </div>
+      {picked.size > 1 && (
+        <label className="check"><input type="checkbox" checked={!!f.rounds} onChange={(e) => setF({ ...f, rounds: e.target.checked })} /> Play in rounds: one category at a time, with a round title on the screen and the standings after each round. Untick to mix the categories together.</label>
+      )}
       <div className="row" style={{ alignItems: 'flex-start' }}>
         <div className="field grow"><label htmlFor="n">Questions</label><input id="n" type="number" min="3" max="100" value={f.questionCount} onChange={set('questionCount')} /></div>
         <div className="field grow"><label htmlFor="s">Timer (seconds)</label><input id="s" type="number" min="5" max="120" value={f.timeLimit} onChange={set('timeLimit')} /></div>
         <div className="field grow"><label htmlFor="d">Difficulty</label>
-          <select id="d" value={f.difficulty} onChange={set('difficulty')}><option value="mixed">Mixed</option><option value="easy">Easy</option><option value="medium">Medium</option><option value="hard">Hard</option></select></div>
+          <select id="d" value={f.difficulty} onChange={set('difficulty')}><option value="challenging">Adult level (medium and hard)</option><option value="mixed">Mixed (easy to hard)</option><option value="easy">Easy</option><option value="medium">Medium</option><option value="hard">Hardest only</option></select></div>
       </div>
       <div className="field">
         <span className="label">Timer presets</span>
         <div className="presets" role="group" aria-label="Timer presets">{[10, 20, 30, 45, 60].map((n) => <button type="button" key={n} className={`chip ${Number(f.timeLimit) === n ? 'on' : ''}`} aria-pressed={Number(f.timeLimit) === n} onClick={() => setF({ ...f, timeLimit: n })}>{n}s</button>)}</div>
         <span className="muted small">Every question is timed (5 to 120 seconds). Answers lock automatically when the clock reaches zero.</span>
       </div>
+      <div className="field"><label htmlFor="mk">Marks for each correct answer</label>
+        <input id="mk" type="number" min="1" max="100" value={f.marks} onChange={set('marks')} style={{ maxWidth: 140 }} />
+        <span className="muted small">Every question is worth the same. The quiz is out of {(Number(f.questionCount) || 0) * (Number(f.marks) || 0)} marks in all. If two players tie, the faster correct answers win.</span></div>
       <div className="field"><span className="label">Prizes (optional)</span>
         <input aria-label="First prize" placeholder="1st place prize" value={f.p1} onChange={set('p1')} />
         <input aria-label="Second prize" placeholder="2nd place prize" value={f.p2} onChange={set('p2')} />

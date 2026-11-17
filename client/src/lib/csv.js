@@ -12,7 +12,7 @@ export function csvCell(value) {
   return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
-/** state: { leaderboard: [{rank,name,kind,score,id,size}], teams: [{id,members}], prizes: [{place,label}] } */
+/** state: { leaderboard: [{rank,name,kind,score,id,size}], teams: [{id,members}], prizes: [{place,label}], possible } */
 export function resultsCsv(state) {
   const prizeFor = (rank) => (state.prizes || []).find((p) => p.place === rank)?.label || '';
   const members = new Map((state.teams || []).map((t) => [t.id, t.members || []]));
@@ -22,9 +22,11 @@ export function resultsCsv(state) {
     r.kind === 'team' ? 'Team' : 'Solo',
     r.kind === 'team' ? (members.get(r.id) || []).join('; ') : '',
     r.score,
-    r.score > 0 ? prizeFor(r.rank) : '', // same rule as the winners list: no points, no prize
+    state.possible || '',
+    state.possible ? `${Math.round((r.score / state.possible) * 100)}%` : '',
+    r.score > 0 ? prizeFor(r.rank) : '', // same rule as the winners list: no marks, no prize
   ]);
-  const lines = [['Rank', 'Name', 'Type', 'Members', 'Points', 'Prize'], ...rows].map((r) => r.map(csvCell).join(','));
+  const lines = [['Rank', 'Name', 'Type', 'Members', 'Marks', 'Out of', 'Percent', 'Prize'], ...rows].map((r) => r.map(csvCell).join(','));
   // BOM so Excel reads names with accents correctly; CRLF is what spreadsheets expect
   return `\uFEFF${lines.join('\r\n')}\r\n`;
 }

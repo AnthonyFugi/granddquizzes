@@ -114,8 +114,9 @@ assert.equal(cara.state.reveal.correctIndex, 1);
 assert.deepEqual(cara.state.reveal.tally, [0, 2, 0, 0]);
 await until('scores', () => cara.me?.result && bob.me?.result);
 assert.equal(cara.me.result.correct, true); assert.equal(bob.me.result.correct, true);
-assert.ok(cara.me.score >= 500 && cara.me.score <= 1000); assert.equal(bob.me.score, alice.me.score);
-ok('both correct: 500-1000 points, team members share the team score');
+assert.equal(cara.me.score, 10); assert.equal(bob.me.score, 10); assert.equal(alice.me.score, 10);
+assert.equal(cara.me.possible, 10); assert.equal(cara.state.possible, 10); assert.equal(cara.state.maxPossible, 30);
+ok('every correct answer earns the same 10 marks, team members share the team score, possible total shown');
 
 // ---- Question 2: nobody answers, timer locks it
 await call(host, 'host:next', {});

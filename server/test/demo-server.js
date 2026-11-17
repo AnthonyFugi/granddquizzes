@@ -32,6 +32,16 @@ function demoQuestions() {
       return toLive({ _id: text, text, options, correctIndex: options.indexOf(correct), difficulty }, catBySlug.get(slug));
     })
   );
+  if (process.env.DEMO_ROUNDS) {
+    const slugs = ['bible', 'geography', 'history'];
+    return slugs.flatMap((slug, ri) => {
+      const cat = catBySlug.get(slug);
+      return shuffle(bank[slug]).slice(0, Math.ceil(COUNT / slugs.length)).map(([text, correct, wrong, difficulty]) => {
+        const options = shuffle([correct, ...wrong]);
+        return toLive({ _id: text, text, options, correctIndex: options.indexOf(correct), difficulty }, cat, { index: ri, name: cat.name, icon: cat.icon });
+      });
+    });
+  }
   return shuffle(all).slice(0, COUNT);
 }
 

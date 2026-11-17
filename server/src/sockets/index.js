@@ -51,7 +51,9 @@ export function registerSockets(io, deps) {
       maxTeamSize: config.maxTeamSize,
       maxPlayers: event.maxPlayers ?? Infinity,
       branding: event.branding || { poweredBy: true },
+      marks: event.marks,
     });
+    session.event = event; // kept so the quiz master can reset it with a fresh set of questions
     session.onChange = () => broadcast(session);
     session.auto = auto;
     session.startAt = event.scheduledFor || 0;
@@ -66,7 +68,15 @@ export function registerSockets(io, deps) {
     } catch (e) {
       console.error('Could not save results', e);
     }
-    setTimeout(() => store.remove(s.code), ENDED_GRACE_MS).unref?.();
+    s.removeTimer = setTimeout(() => store.remove(s.code), ENDED_GRACE_MS);
+    s.removeTimer.unref?.();
+  }
+
+  // A finished quiz can be played again: it becomes live again and its saved results are cleared
+  async function reopen(s) {
+    if (s.status !== 'ended') return;
+    clearTimeout(s.removeTimer);
+    await deps.markLive?.({ id: s.eventId });
   }
 
   // Scheduled quizzes: the waiting room opens a little before the start time, and the quiz runs itself
@@ -162,6 +172,25 @@ export function registerSockets(io, deps) {
       s.end();
       broadcast(s);
       await finish(s);
+    });
+    // Back to the waiting room with a fresh set of questions. Players and teams stay, scores go to zero.
+    on(socket, 'host:reset', async () => {
+      const s = hostSession();
+      const fresh = s.event ? await deps.loadQuestions(s.event) : null;
+      await reopen(s);
+      s.resetTo(fresh);
+      s.auto = false;
+      broadcast(s);
+    });
+    // Start again from question 1 right now, with the same questions and zeroed scores.
+    on(socket, 'host:restart', async () => {
+      const s = hostSession();
+      if (s.players.size === 0) throw new UserError('Wait for at least one player to join');
+      await reopen(s);
+      s.resetTo();
+      s.auto = false;
+      s.next();
+      broadcast(s);
     });
     on(socket, 'host:setLeader', ({ teamId, playerId }) => {
       const s = hostSession();

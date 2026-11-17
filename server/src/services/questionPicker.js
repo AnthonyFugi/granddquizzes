@@ -11,7 +11,7 @@ export function shuffle(arr) {
 }
 
 // Turn a stored question into the in-memory form used live: shuffle the options, track the new answer position.
-export function toLive(q, cat) {
+export function toLive(q, cat, round) {
   const order = shuffle(q.options.map((_, i) => i));
   return {
     id: String(q._id || q.id || ''),
@@ -21,18 +21,58 @@ export function toLive(q, cat) {
     explanation: q.explanation || '',
     difficulty: q.difficulty,
     category: { name: cat?.name || '', icon: cat?.icon || '' },
+    ...(round ? { round } : {}),
   };
 }
 
-// Pick `count` questions spread evenly across the chosen categories, no repeats.
-export async function pickQuestions({ categoryIds = [], count = 10, difficulty = 'mixed' }) {
+// 'challenging' = medium and hard only
+export function difficultyMatch(difficulty) {
+  if (difficulty === 'challenging') return { difficulty: { $in: ['medium', 'hard'] } };
+  if (difficulty && difficulty !== 'mixed') return { difficulty };
+  return {};
+}
+
+// Split `count` questions across categories as evenly as possible. A category that has too few questions
+// gives its share to the others. `available` is how many questions each category can offer.
+export function allocate(count, available) {
+  const n = available.length;
+  const sizes = new Array(n).fill(0);
+  let left = Math.min(count, available.reduce((a, b) => a + b, 0));
+  while (left > 0) {
+    let gave = 0;
+    for (let i = 0; i < n && left > 0; i++) {
+      if (sizes[i] < available[i]) { sizes[i] += 1; left -= 1; gave += 1; }
+    }
+    if (!gave) break;
+  }
+  return sizes;
+}
+
+// Pick `count` questions. With rounds, the quiz plays one category after another, in the order given.
+// Without, questions from the chosen categories are mixed together. No repeats either way.
+export async function pickQuestions({ categoryIds = [], count = 10, difficulty = 'mixed', rounds = false }) {
   const cats = categoryIds.length
     ? await Category.find({ _id: { $in: categoryIds } })
     : await Category.find();
   if (!cats.length) return [];
   const catMap = new Map(cats.map((c) => [String(c._id), c]));
-  const base = { active: true };
-  if (difficulty !== 'mixed') base.difficulty = difficulty;
+  const base = { active: true, ...difficultyMatch(difficulty) };
+
+  if (rounds && categoryIds.length > 1) {
+    const ordered = categoryIds.map((id) => catMap.get(String(id))).filter(Boolean);
+    const counts = await Promise.all(ordered.map((c) => Question.countDocuments({ ...base, category: c._id })));
+    const sizes = allocate(count, counts);
+    const out = [];
+    let roundNo = 0;
+    for (let i = 0; i < ordered.length; i++) {
+      if (!sizes[i]) continue;
+      const cat = ordered[i];
+      const docs = await Question.aggregate([{ $match: { ...base, category: cat._id } }, { $sample: { size: sizes[i] } }]);
+      const round = { index: roundNo++, name: cat.name, icon: cat.icon || '' };
+      out.push(...shuffle(docs).map((d) => toLive(d, cat, round)));
+    }
+    return out;
+  }
 
   const per = Math.floor(count / cats.length);
   let extra = count % cats.length;

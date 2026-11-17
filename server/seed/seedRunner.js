@@ -3,7 +3,12 @@ import bcrypt from 'bcryptjs';
 import { Category } from '../src/models/Category.js';
 import { Question, makeKey } from '../src/models/Question.js';
 import { User } from '../src/models/User.js';
+import { Setting } from '../src/models/Setting.js';
 import { shuffle } from '../src/services/questionPicker.js';
+
+// Raise this whenever categories or questions are added to the seed files. On the next start the server adds
+// whatever is missing (existing questions are never changed), once per version.
+export const SEED_VERSION = 4;
 
 const read = (name) => JSON.parse(fs.readFileSync(new URL(`./data/${name}`, import.meta.url), 'utf8'));
 
@@ -77,32 +82,16 @@ export async function ensureAdmin({ log = console.log } = {}) {
   return user;
 }
 
-export async function seedMissingCategories({ log = console.log } = {}) {
-  const { categories, bank } = loadSeed();
-  const have = new Set((await Category.find({}, 'slug').lean()).map((c) => c.slug));
-  const missing = categories.filter((c) => !have.has(c.slug));
-  if (!missing.length) return 0;
-  for (const c of missing) {
-    const doc = await Category.create({ slug: c.slug, name: c.name, description: c.description, icon: c.icon, order: c.order });
-    const rows = (bank[c.slug] || []).map(([text, correct, wrong, difficulty, explanation = '']) => {
-      const options = shuffle([correct, ...wrong]);
-      return { key: makeKey(String(doc._id), text), category: doc._id, text, options, correctIndex: options.indexOf(correct), difficulty, explanation, active: true };
-    });
-    if (rows.length) await Question.insertMany(rows, { ordered: false });
-    log(`Added new category "${c.name}" with ${rows.length} questions`);
-  }
-  return missing.length;
-}
-
 // Called on server start: fills an empty database so the first deployment works straight away.
 export async function bootstrap() {
   try {
     if (process.env.AUTO_SEED !== 'false') {
+      const row = await Setting.findOne({ key: 'seedVersion' }).lean();
       const empty = (await Question.estimatedDocumentCount()) === 0;
-      // Empty database: seed everything. Otherwise add only categories the live database does not have yet
-      // (e.g. a newly shipped one), with their questions; existing edits are never touched.
-      if (empty) await runSeed();
-      else await seedMissingCategories();
+      if (empty || (row?.value ?? 0) < SEED_VERSION) {
+        await runSeed();
+        await Setting.updateOne({ key: 'seedVersion' }, { $set: { value: SEED_VERSION } }, { upsert: true });
+      }
     }
     await ensureAdmin();
   } catch (e) {

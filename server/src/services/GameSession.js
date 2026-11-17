@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { pointsFor } from './scoring.js';
+import { DEFAULT_MARKS, cleanMarks } from './scoring.js';
 import { UserError } from './errors.js';
 
 const clean = (s, max) => String(s ?? '').replace(/\s+/g, ' ').trim().slice(0, max);
@@ -9,7 +9,7 @@ const clean = (s, max) => String(s ?? '').replace(/\s+/g, ' ').trim().slice(0, m
  * Status flow: lobby -> question -> (locked) -> reveal -> question ... -> ended
  */
 export class GameSession {
-  constructor({ code, eventId, title, prizes = [], questions, timeLimit = 20, maxTeamSize = 10, maxPlayers = Infinity, branding = { poweredBy: true } }) {
+  constructor({ code, eventId, title, prizes = [], questions, timeLimit = 20, maxTeamSize = 10, maxPlayers = Infinity, branding = { poweredBy: true }, marks = DEFAULT_MARKS }) {
     this.code = code;
     this.eventId = eventId;
     this.title = title;
@@ -20,6 +20,8 @@ export class GameSession {
     this.maxPlayers = maxPlayers; // set from the plan; refreshed whenever the host opens the console
     this.branding = branding; // already filtered by plan: what guests are allowed to see
 
+    this.marks = cleanMarks(marks); // marks for every correct answer
+    this.scoredCount = 0; // questions revealed so far: the possible total grows by one question each time
     this.status = 'lobby';
     this.players = new Map(); // playerId -> { id, nickname, socketId, connected, teamId, score }
     this.teams = new Map(); // teamId -> { id, name, leaderId, memberIds:Set, score }
@@ -266,7 +268,6 @@ export class GameSession {
     clearTimeout(this.timer);
     const q = this.question;
     const tally = q.options.map(() => 0);
-    const limitMs = this.timeLimit * 1000;
     this.results = new Map();
     for (const [key, holder] of this.holders()) {
       const a = this.answers.get(key);
@@ -276,11 +277,13 @@ export class GameSession {
       }
       tally[a.choice] += 1;
       const correct = a.choice === q.correctIndex;
-      const points = correct ? pointsFor(a.elapsedMs, limitMs) : 0;
+      const points = correct ? this.marks : 0;
       holder.score += points;
+      if (correct) holder.timeMs = (holder.timeMs || 0) + a.elapsedMs; // only used to break ties
       this.results.set(key, { answered: true, correct, points, choice: a.choice });
     }
     this.tally = tally;
+    this.scoredCount += 1;
     this.status = 'reveal';
     this.touch();
   }
@@ -296,22 +299,72 @@ export class GameSession {
     this.touch();
   }
 
+  // Marks available so far (questions already revealed) and for the whole quiz
+  possibleScore() {
+    return this.scoredCount * this.marks;
+  }
+
+  // Which round a question belongs to (only when the quiz was built category by category)
+  roundOf(i) {
+    const q = this.questions[i];
+    if (!q?.round) return null;
+    let first = i;
+    while (first > 0 && this.questions[first - 1]?.round?.index === q.round.index) first -= 1;
+    let last = i;
+    while (last + 1 < this.questions.length && this.questions[last + 1]?.round?.index === q.round.index) last += 1;
+    const of = new Set(this.questions.map((x) => x.round?.index)).size;
+    return { number: q.round.index + 1, of, name: q.round.name, icon: q.round.icon, position: i - first + 1, size: last - first + 1, last: i === last };
+  }
+
+  roundList() {
+    const seen = new Map();
+    this.questions.forEach((q) => {
+      if (q.round && !seen.has(q.round.index)) seen.set(q.round.index, { name: q.round.name, icon: q.round.icon, size: 0 });
+      if (q.round) seen.get(q.round.index).size += 1;
+    });
+    return [...seen.values()];
+  }
+
+  /** Back to the waiting room: scores and progress cleared, players and teams kept. Optionally with a fresh set of questions. */
+  resetTo(questions) {
+    clearTimeout(this.timer);
+    this.timer = null;
+    if (questions?.length) this.questions = questions;
+    this.index = -1;
+    this.status = 'lobby';
+    this.answers = new Map();
+    this.results = new Map();
+    this.tally = null;
+    this.startedAt = null;
+    this.endsAt = null;
+    this.endedAt = null;
+    this.finalStandings = null;
+    this.scoredCount = 0;
+    this.revealAt = null;
+    this.autoGo = null;
+    for (const t of this.teams.values()) { t.score = 0; t.timeMs = 0; }
+    for (const p of this.players.values()) { p.score = 0; p.timeMs = 0; }
+    this.touch();
+  }
+
   // ---------- views ----------
   standings() {
     const rows = [];
     for (const t of this.teams.values()) {
-      rows.push({ key: `t:${t.id}`, kind: 'team', id: t.id, name: t.name, score: t.score, size: t.memberIds.size });
+      rows.push({ key: `t:${t.id}`, kind: 'team', id: t.id, name: t.name, score: t.score, timeMs: t.timeMs || 0, size: t.memberIds.size });
     }
     for (const p of this.players.values()) {
-      if (!p.teamId) rows.push({ key: `p:${p.id}`, kind: 'solo', id: p.id, name: p.nickname, score: p.score, size: 1 });
+      if (!p.teamId) rows.push({ key: `p:${p.id}`, kind: 'solo', id: p.id, name: p.nickname, score: p.score, timeMs: p.timeMs || 0, size: 1 });
     }
-    rows.sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
+    // Same marks: the one who answered correctly faster in total ranks higher. Equal on both = same place.
+    rows.sort((a, b) => b.score - a.score || a.timeMs - b.timeMs || a.name.localeCompare(b.name));
     let rank = 0;
     let prev = null;
     rows.forEach((r, i) => {
-      if (r.score !== prev) {
+      const sig = `${r.score}:${r.timeMs}`;
+      if (sig !== prev) {
         rank = i + 1;
-        prev = r.score;
+        prev = sig;
       }
       r.rank = rank;
     });
@@ -360,6 +413,7 @@ export class GameSession {
             text: q.text,
             options: q.options,
             category: q.category,
+            round: this.roundOf(this.index),
             timeLimit: this.timeLimit,
             startedAt: this.startedAt,
             endsAt: this.endsAt,
@@ -368,6 +422,10 @@ export class GameSession {
       answeredCount: this.answers.size,
       expectedCount: this.expectedCount(),
       totalQuestions: this.questions.length,
+      marks: this.marks, // marks per correct answer
+      possible: this.possibleScore(), // marks available so far
+      maxPossible: this.questions.length * this.marks,
+      rounds: this.roundList(),
       timeLimit: this.timeLimit, // seconds per question, known from the lobby on
     };
     if (this.status === 'reveal' && q) {
@@ -410,6 +468,7 @@ export class GameSession {
       choice: ans ? ans.choice : null,
       result: this.status === 'reveal' ? this.results.get(key) || null : null,
       score: row ? row.score : 0,
+      possible: this.possibleScore(),
       rank: row ? row.rank : null,
       of: standings.length,
     };

@@ -292,3 +292,65 @@ button.chip { cursor: pointer; min-height: 40px; }
   .table.stack td[data-label]:not([data-label=""])::before { content: attr(data-label); display: block; font: 600 0.75rem var(--body); text-transform: uppercase; letter-spacing: 0.04em; color: var(--ink-soft); margin-bottom: 2px; }
   .table.stack .row select, .table.stack .row input { flex: 1 1 110px; }
 }
+
+/* ---------- rounds, marks ---------- */
+.round-banner { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 14px; padding: 8px 14px; margin-bottom: 10px; border-radius: 12px; background: rgba(207, 106, 31, 0.14); border-left: 6px solid var(--copper, #cf6a1f); }
+.round-banner strong { font: 700 1rem var(--display); }
+.round-banner.big { padding: 12px 20px; font-size: 1.5rem; background: rgba(240, 180, 41, 0.18); border-left-color: #f0b429; }
+.round-banner.big strong { font-size: 1.5rem; }
+.stage .round-banner .muted { color: #d3e2db; }
+.pct { font-weight: 500; opacity: 0.75; font-size: 0.78em; white-space: nowrap; }
+.check { display: flex; gap: 10px; align-items: flex-start; margin: 4px 0 14px; line-height: 1.4; }
+.check input { margin-top: 4px; flex: none; width: 20px; height: 20px; }
+
+.stage .facts { list-style: none; margin: 18px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px 26px; font-size: clamp(1.1rem, 2vw, 1.5rem); }
+.stage .facts strong { font: 700 1.3em var(--display); color: #f0b429; }
+.stage .rounds-line { margin: 12px 0 0; font-size: clamp(1.05rem, 1.8vw, 1.35rem); color: #d3e2db; }
+.stage .rounds-line strong { color: #fff; }
+
+/* ---------- big screen: everything fits one screen, from a laptop to a full-HD projector ---------- */
+.stage { height: 100vh; height: 100dvh; min-height: 0; overflow: hidden; display: flex; flex-direction: column; }
+.stage > .band { flex: none; }
+.stage .page { flex: 1; min-height: 0; max-width: none; margin: 0; width: 100%; padding: 1.2vh 2.6vw 1.4vh; display: flex; flex-direction: column; }
+.stage-top { flex: none; margin-bottom: 1vh; gap: 8px 14px; }
+.stage-head .logo, .stage-head .org-mark { transform-origin: left center; }
+.stage .join-corner { padding: 6px 12px; }
+.stage .join-corner .qr svg { width: min(9vh, 84px); height: min(9vh, 84px); }
+.stage-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.stage-body > .stage-grid { flex: 1; min-height: 0; align-items: stretch; }
+.stage-body > .stage-grid > * { min-height: 0; min-width: 0; }
+.stage-body > .qview { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.stage .q-meta { margin: 0.6vh 0 0.8vh; }
+.stage .q-text { font-size: clamp(1.15rem, min(3.1vw, 5vh), 3rem); margin: 0.8vh 0 1.4vh; line-height: 1.18; }
+.stage h1 { font-size: clamp(1.6rem, min(4.2vw, 7vh), 3.6rem); margin-bottom: 1vh; }
+.stage h2 { font-size: clamp(1.1rem, min(2vw, 3.4vh), 1.8rem); margin: 0 0 0.8vh; }
+.stage .options { gap: 1.4vh 1.2vw; }
+.stage .options.cols, .stage .reveal-opts { flex: 1; min-height: 0; grid-template-columns: 1fr 1fr; grid-auto-rows: minmax(0, 1fr); }
+.stage .opt { min-height: 0; padding: 0.8vh 1.2vw; font-size: clamp(1rem, min(2.2vw, 3.8vh), 1.9rem); }
+.stage .opt svg { width: clamp(22px, 3.2vh, 38px); height: clamp(22px, 3.2vh, 38px); }
+.stage .opt .tally { font-size: clamp(1.2rem, 3.4vh, 1.8rem); }
+.stage .opt .tag { font-size: clamp(0.8rem, 1.9vh, 1rem); }
+.stage .clock-num { font-size: clamp(1.6rem, min(3.6vw, 6vh), 3.4rem); padding: 0.4vh 1.2vw; }
+.stage .clock .timer { height: clamp(10px, 1.6vh, 16px); }
+.stage .round-banner.big { padding: 0.8vh 1.4vw; margin-bottom: 0.6vh; font-size: clamp(1rem, 2.6vh, 1.5rem); }
+.stage .round-banner.big strong { font-size: clamp(1.05rem, 3vh, 1.6rem); }
+.stage .lb li { padding: 1.1vh 8px; font-size: clamp(1rem, min(1.8vw, 3vh), 1.5rem); }
+.stage .lb .rank, .stage .lb .score { font-size: clamp(0.95rem, min(1.6vw, 2.8vh), 1.35rem); }
+.stage .lb { overflow: hidden; }
+.stage .chip { font-size: clamp(0.85rem, 2vh, 1.1rem); padding: 4px 12px; }
+.stage .tiles.big .tile { width: clamp(52px, min(8vw, 12vh), 120px); font-size: clamp(2rem, min(5vw, 8vh), 4.4rem); border-bottom-width: 7px; }
+.stage .big-count { font-size: clamp(2rem, min(5vw, 9vh), 4.4rem); }
+.stage .name-cloud { gap: 0.8vh 8px; max-height: 24vh; overflow: hidden; }
+.stage .facts { margin-top: 1.4vh; font-size: clamp(1rem, min(1.8vw, 3vh), 1.5rem); }
+.stage .rounds-line { margin-top: 0.8vh; font-size: clamp(0.95rem, min(1.6vw, 2.6vh), 1.35rem); }
+.stage .sponsors.on-dark { flex: none; margin-top: 1vh; padding-top: 0.8vh; font-size: clamp(0.9rem, 2.2vh, 1.2rem); }
+.stage .sponsors.on-dark .sponsor { font-size: clamp(1rem, 2.4vh, 1.3rem); }
+.stage .qr-lobby svg { width: min(26vh, 200px); height: min(26vh, 200px); }
+.sound-toggle { right: 8px; bottom: 6px; min-height: 32px; padding: 0 12px; font-size: 0.8rem; opacity: 0.5; }
+/* lobby: use the room on big projectors */
+.stage .tiles.big .tile { width: clamp(52px, min(8vw, 13vh), 170px); font-size: clamp(2rem, min(5vw, 9vh), 6rem); }
+.stage .qr-lobby svg { width: min(30vh, 340px); height: min(30vh, 340px); }
+.stage .facts { font-size: clamp(1rem, min(1.9vw, 3.4vh), 1.9rem); }
+.stage .rounds-line { font-size: clamp(0.95rem, min(1.7vw, 3vh), 1.7rem); }
+.stage .big-count { font-size: clamp(2rem, min(5vw, 10vh), 6rem); }
+.stage .name-cloud { max-height: 26vh; }

@@ -40,7 +40,25 @@ export const ordinal = (n) => {
   return `${n}${['th', 'st', 'nd', 'rd'][n % 10] || 'th'}`;
 };
 
-export function Leaderboard({ rows, meKey, limit = 8, prizes = [] }) {
+// "80 / 150" with the percentage; just the number when no total is known yet
+export const pct = (score, possible) => (possible > 0 ? Math.round((score / possible) * 100) : null);
+export function ScoreText({ score, possible }) {
+  return possible > 0 ? <>{score.toLocaleString()} / {possible.toLocaleString()} <small className="pct">({pct(score, possible)}%)</small></> : <>{score.toLocaleString()}</>;
+}
+
+// Shown above the question when the quiz is played one category at a time
+export function RoundBanner({ round, big = false }) {
+  if (!round) return null;
+  return (
+    <div className={`round-banner ${big ? 'big' : ''}`}>
+      <strong>Round {round.number} of {round.of}</strong>
+      <span>{round.icon} {round.name}</span>
+      <span className="muted small">Question {round.position} of {round.size}</span>
+    </div>
+  );
+}
+
+export function Leaderboard({ rows, meKey, limit = 8, prizes = [], possible = 0 }) {
   const prizeFor = (rank) => prizes.find((p) => p.place === rank)?.label;
   const shown = rows.slice(0, limit);
   const mine = meKey && !shown.some((r) => r.key === meKey) ? rows.find((r) => r.key === meKey) : null;
@@ -52,7 +70,7 @@ export function Leaderboard({ rows, meKey, limit = 8, prizes = [] }) {
         {r.kind === 'team' && <span className="muted small"> team of {r.size}</span>}
         {prizeFor(r.rank) && r.score > 0 && <span className="prize">{prizeFor(r.rank)}</span>}
       </span>
-      <span className="score">{r.score.toLocaleString()}</span>
+      <span className="score"><ScoreText score={r.score} possible={possible} /></span>
     </li>
   );
   return (

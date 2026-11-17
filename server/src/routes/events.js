@@ -8,6 +8,8 @@ import { requireAuth, requireRole, requireCurrentAccess } from '../middleware/au
 import { wrap } from '../middleware/errors.js';
 import { UserError } from '../services/errors.js';
 import { store } from '../services/sessionStore.js';
+import { cleanMarks } from '../services/scoring.js';
+import { difficultyMatch } from '../services/questionPicker.js';
 import { eventEntitlements, entitlementsMap } from '../services/entitlements.js';
 import { decodeLogo, publicBranding, sanitizeBranding } from '../services/branding.js';
 
@@ -76,7 +78,9 @@ async function readSettings(b) {
     if (title.length < 3) throw new UserError('Give the event a title');
     const questionCount = Math.min(100, Math.max(3, Number(b.questionCount) || 10));
     const timeLimit = Math.min(120, Math.max(5, Number(b.timeLimit) || 20));
-    const difficulty = ['mixed', 'easy', 'medium', 'hard'].includes(b.difficulty) ? b.difficulty : 'mixed';
+    const difficulty = ['challenging', 'mixed', 'easy', 'medium', 'hard'].includes(b.difficulty) ? b.difficulty : 'challenging';
+    const marks = cleanMarks(b.marks);
+    const rounds = b.rounds !== false;
 
     let categories = Array.isArray(b.categories) ? b.categories : [];
     if (categories.some((c) => !mongoose.isValidObjectId(c))) throw new UserError('Invalid category');
@@ -87,7 +91,7 @@ async function readSettings(b) {
 
     const match = { active: true };
     if (categories.length) match.category = { $in: categories.map((c) => new mongoose.Types.ObjectId(c)) };
-    if (difficulty !== 'mixed') match.difficulty = difficulty;
+    Object.assign(match, difficultyMatch(difficulty));
     const available = await Question.countDocuments(match);
     if (available < questionCount) {
       throw new UserError(`Only ${available} questions match that selection. Lower the question count or add categories`);
@@ -103,14 +107,14 @@ async function readSettings(b) {
     if (Number.isNaN(scheduledFor.getTime())) throw new UserError('That date and time is not valid');
     if (scheduledFor.getTime() < Date.now() - 5 * 60000) throw new UserError('The scheduled time has already passed. Pick a time from now onwards, or leave it empty');
   }
-  return { title, categories, questionCount, timeLimit, difficulty, prizes, scheduledFor };
+  return { title, categories, questionCount, timeLimit, difficulty, marks, rounds, prizes, scheduledFor };
 }
 
 router.post(
   '/',
   wrap(async (req, res) => {
     const b = req.body;
-    const { title, categories, questionCount, timeLimit, difficulty, prizes, scheduledFor } = await readSettings(b);
+    const { title, categories, questionCount, timeLimit, difficulty, marks, rounds, prizes, scheduledFor } = await readSettings(b);
 
     let event;
     for (let attempt = 0; attempt < 8; attempt++) {
@@ -123,6 +127,8 @@ router.post(
           questionCount,
           timeLimit,
           difficulty,
+          marks,
+          rounds,
           prizes,
           branding: brandingForSave(b.branding),
           scheduledFor,
