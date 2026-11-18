@@ -50,12 +50,12 @@ function Events() {
   const [cats, setCats] = useState([]);
   const [creating, setCreating] = useState(false);
   const [err, setErr] = useState('');
-  const load = () => api('/events/mine').then(setEvents).catch((e) => setErr(e.message));
+  const load = () => api('/events/mine').then((r) => { setEvents(r); setErr(''); }).catch((e) => setErr(e.message));
   useEffect(() => { load(); api('/categories').then(setCats).catch(() => {}); }, []);
 
   const remove = async (ev) => {
     if (!window.confirm(`Delete "${ev.title}" and its registrations?`)) return;
-    try { await api(`/events/${ev._id}`, { method: 'DELETE' }); load(); } catch (e) { setErr(e.message); }
+    try { setErr(''); await api(`/events/${ev._id}`, { method: 'DELETE' }); load(); } catch (e) { setErr(e.message); }
   };
 
   return (

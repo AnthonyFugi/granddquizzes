@@ -239,7 +239,10 @@ router.delete(
     if (!ev || (req.user.role !== 'admin' && String(ev.host) !== String(req.user._id))) {
       throw new UserError('Event not found', 404);
     }
-    if (store.getByEvent(ev._id)) throw new UserError('End the live quiz before deleting it');
+    const live = store.getByEvent(ev._id);
+    // A finished quiz stays in memory for a while so phones can still see results; that must not block deleting it
+    if (live && live.status !== 'ended') throw new UserError('End the live quiz before deleting it');
+    if (live) { clearTimeout(live.removeTimer); store.remove(live.code); }
     await Registration.deleteMany({ event: ev._id });
     await ev.deleteOne();
     res.json({ ok: true });
