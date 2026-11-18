@@ -10,6 +10,7 @@ import questionRoutes from './routes/questions.js';
 import eventRoutes from './routes/events.js';
 import billingRoutes from './routes/billing.js';
 import hostRoutes from './routes/hosts.js';
+import contactRoutes from './routes/contact.js';
 import { paymentsEnabled } from './services/flutterwave.js';
 import { errorHandler } from './middleware/errors.js';
 import { store } from './services/sessionStore.js';
@@ -32,6 +33,7 @@ export function createApp() {
   app.use('/api/events', eventRoutes);
   app.use('/api/billing', billingRoutes);
   app.use('/api/hosts', hostRoutes);
+  app.use('/api/contact', contactRoutes);
   app.use('/api', (req, res) => res.status(404).json({ error: 'Not found' }));
 
   // In production one server serves the built React app too
