@@ -3,7 +3,10 @@ import { useNavigate, useParams } from 'react-router-dom';
 import Band from '../components/Band.jsx';
 import { CodeTiles } from '../components/Code.jsx';
 import { Leaderboard, Option, RoundBanner, ScoreText, TimeNote, TimerBar, Waiting, blitzLength, ordinal, unitOf } from '../components/Quiz.jsx';
+import SoundControls from '../components/SoundControls.jsx';
 import { useBlitzClock, useCountdown, usePlayer } from '../hooks/useQuiz.js';
+import { useQuizAudio } from '../hooks/useSounds.js';
+import { cues } from '../lib/sound.js';
 import { clearPlayer } from '../lib/socket.js';
 import { OrgMark, SponsorStrip } from '../components/Brand.jsx';
 import { brandVars, hasBrand } from '../lib/brand.js';
@@ -14,6 +17,7 @@ export default function Play() {
   const { phase, error, state, me, act, retry } = usePlayer(code);
   const clock = useCountdown(state);
   const blitzClock = useBlitzClock(state);
+  useQuizAudio({ role: 'phone', state, me, left: state?.status === 'blitz' ? blitzClock.left : clock.left });
 
   if (phase === 'kicked') {
     return (
@@ -68,6 +72,7 @@ function Frame({ code, title, banner, branding, children }) {
           <CodeTiles code={code} size="small" />
         </div>
         {children}
+        <SoundControls inline />
         {branding && <SponsorStrip branding={branding} />}
         {branding?.poweredBy && <p className="powered-note">Quiz night powered by <strong>Granddquiz</strong></p>}
       </main>
@@ -162,6 +167,7 @@ function Blitz({ state, me, act, clock }) {
     const r = await act('blitz:answer', { choice });
     if (!r.ok) { setFlash(null); setErr(r.error); return; }
     setBest(r.blitz);
+    if (r.skipped) cues.skip(); else if (r.correct) cues.correct(); else cues.wrong();
     setFlash({ choice, correctIndex: r.correctIndex, correct: r.correct, skipped: r.skipped });
     setTimeout(() => { setShown(r.blitz); setFlash(null); }, r.skipped ? 150 : r.correct ? 450 : 1100);
   };
@@ -210,6 +216,7 @@ function Question({ state, me, act, clock }) {
   const choose = async (i) => {
     if (!canTap) return;
     setPicked(i);
+    cues.pick();
     const r = await act('answer:submit', { choice: i });
     if (!r.ok) { setPicked(null); setErr(r.error); }
   };

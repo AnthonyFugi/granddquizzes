@@ -520,6 +520,7 @@ export class GameSession {
             text: q.text,
             options: q.options,
             category: q.category,
+            difficulty: q.difficulty,
             round: this.roundOf(this.index),
             timeLimit: this.timeLimit,
             startedAt: this.startedAt,

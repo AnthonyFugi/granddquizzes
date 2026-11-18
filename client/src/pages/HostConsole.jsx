@@ -3,7 +3,9 @@ import { Link, useParams } from 'react-router-dom';
 import Shell from '../components/Shell.jsx';
 import { CodeTiles } from '../components/Code.jsx';
 import { Leaderboard, Option, RoundBanner, ScoreText, TimerBar, Waiting, blitzLength, unitOf } from '../components/Quiz.jsx';
+import SoundControls from '../components/SoundControls.jsx';
 import { useBlitzClock, useCountdown, useHost } from '../hooks/useQuiz.js';
+import { useQuizAudio } from '../hooks/useSounds.js';
 import { useAuth } from '../lib/auth.jsx';
 import { downloadCsv, resultsCsv, resultsFilename } from '../lib/csv.js';
 import { SignIn } from './Host.jsx';
@@ -18,6 +20,7 @@ function Console({ eventId, token }) {
   const { phase, error, state, info, meta, act, retry } = useHost(eventId, token);
   const clock = useCountdown(state);
   const blitzClock = useBlitzClock(state);
+  useQuizAudio({ role: 'host', state, left: state?.status === 'blitz' ? blitzClock.left : clock.left });
   const [msg, setMsg] = useState('');
   const run = async (event, data) => {
     const r = await act(event, data);
@@ -44,6 +47,7 @@ function Console({ eventId, token }) {
         <div>
           <h1 style={{ marginBottom: 6 }}>{state.title}</h1>
           <span className="muted">{state.playerCount} in the room, {state.connectedCount} connected</span>
+          <div style={{ marginTop: 8 }}><SoundControls inline /></div>
         </div>
         <div className="row">
           <CodeTiles code={meta.code} size="small" />

@@ -354,3 +354,14 @@ button.chip { cursor: pointer; min-height: 40px; }
 .stage .rounds-line { font-size: clamp(0.95rem, min(1.7vw, 3vh), 1.7rem); }
 .stage .big-count { font-size: clamp(2rem, min(5vw, 10vh), 6rem); }
 .stage .name-cloud { max-height: 26vh; }
+
+/* Sound controls: music and effects, each can be switched off */
+.sound-controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.sound-controls button { min-height: 40px; padding: 0 14px; border-radius: 99px; border: 2px solid var(--line, #c9c2b3); background: transparent; color: inherit; font: 600 0.9rem var(--body); cursor: pointer; }
+.sound-controls button[aria-pressed='true'] { background: var(--copper); border-color: var(--copper); color: #fff; }
+.sound-controls .sound-hint { flex-basis: 100%; font-size: 0.85rem; opacity: 0.85; }
+.sound-controls.inline { margin-top: 18px; }
+.stage > .sound-controls { position: fixed; right: 18px; bottom: 18px; justify-content: flex-end; z-index: 20; }
+.stage > .sound-controls button { border-color: rgba(255, 255, 255, 0.45); color: #fff; background: rgba(10, 61, 47, 0.85); opacity: 0.8; }
+.stage > .sound-controls button[aria-pressed='true'] { background: var(--copper); border-color: var(--copper); opacity: 1; }
+.stage > .sound-controls .sound-hint { color: #fff; background: rgba(10, 61, 47, 0.9); padding: 6px 12px; border-radius: 99px; text-align: center; }

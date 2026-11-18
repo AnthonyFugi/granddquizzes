@@ -7,8 +7,8 @@ import { brandVars } from '../lib/brand.js';
 import { CodeTiles } from '../components/Code.jsx';
 import { Leaderboard, Option, RoundBanner, ScoreText, TimerBar, Waiting, blitzLength, unitOf } from '../components/Quiz.jsx';
 import { useBlitzClock, useCountdown, useScreen } from '../hooks/useQuiz.js';
-import { useScreenSounds } from '../hooks/useSounds.js';
-import { setSound } from '../lib/sound.js';
+import SoundControls from '../components/SoundControls.jsx';
+import { useQuizAudio } from '../hooks/useSounds.js';
 
 // How many leaderboard rows fit under the heading on this screen, so nothing is cut off
 function useFitRows(share = 0.6) {
@@ -26,8 +26,7 @@ export default function Screen() {
   const { phase, error, state, retry } = useScreen(code);
   const clock = useCountdown(state);
   const blitzClock = useBlitzClock(state);
-  const [sound, setSoundState] = useState(false);
-  useScreenSounds(state, clock.left);
+  useQuizAudio({ role: 'screen', state, left: state?.status === 'blitz' ? blitzClock.left : clock.left });
   const showJoinCorner = !!state && ['question', 'locked', 'reveal', 'blitz'].includes(state.status);
 
   return (
@@ -61,9 +60,7 @@ export default function Screen() {
         </div>
         {state && <SponsorStrip branding={state.branding} light />}
       </div>
-      <button type="button" className="sound-toggle" aria-pressed={sound} onClick={async () => setSoundState(await setSound(!sound))}>
-        {sound ? 'Sound on' : 'Turn sound on'}
-      </button>
+      <SoundControls />
     </div>
   );
 }

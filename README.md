@@ -21,7 +21,7 @@ cp .env.example .env        # set MONGODB_URI, JWT_SECRET, ADMIN_EMAIL, ADMIN_PA
 npm install
 npm run validate            # checks the seed files (no database needed)
 npm test                    # plays a full quiz over real sockets (no database needed)
-npm run dev                 # on first start the DB is filled with 11 categories / 620 questions
+npm run dev                 # on first start the DB is filled with 11 categories / 2,557 questions
                             # and the admin account is created from ADMIN_EMAIL / ADMIN_PASSWORD
 
 cd ../client && npm install && npm run dev    # http://localhost:5173, proxies /api and sockets to the server on :5001
@@ -40,7 +40,7 @@ npm run seed:reset    # re-insert the seed questions with fresh answer order (yo
 
 When creating an event, choose **Blitz: race the clock**. Everyone plays at once on their own phone and answers as many questions as they can before the blitz length runs out (30 seconds to 15 minutes). Each player gets the same question pool in their own random order and can skip a question for free. Score = number of correct answers. Ties go to fewer wrong answers, then faster correct answers. A team's score is its members' correct answers added together. The big screen shows the countdown and a live leaderboard. Everything else (QR join, scheduling, prizes, CSV, reset, play again) works as in a classic quiz.
 
-## Seed content (620 questions)
+## Seed content (2,557 questions)
 
 | Category | Qs | Category | Qs |
 |---|---|---|---|
@@ -138,3 +138,11 @@ Every quiz is timed. The quiz master sets seconds per question (5 to 120, defaul
 ## Next
 
 Possible additions: sound cues on the big screen, a downloadable results sheet for the host, per-event question uploads.
+
+## Sound and music
+Everything is synthesised in the browser (Web Audio), so there are no audio files. Background music and sound
+effects are both on by default; each player, the host console and the big screen have their own Music and
+Effects switches, remembered per device. Every category has its own theme, difficulty changes how busy and
+fast it plays, blitz and the lobby have their own tunes, and the music speeds up with a ticking pulse as the
+clock runs down. The final question gets an alarm, a blitz gets a 30-second warning, and correct and wrong
+answers each have their own sound. Browsers only allow sound after a first click or tap.

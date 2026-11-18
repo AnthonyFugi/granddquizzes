@@ -20,7 +20,7 @@ export function toLive(q, cat, round) {
     correctIndex: order.indexOf(q.correctIndex),
     explanation: q.explanation || '',
     difficulty: q.difficulty,
-    category: { name: cat?.name || '', icon: cat?.icon || '' },
+    category: { name: cat?.name || '', icon: cat?.icon || '', slug: cat?.slug || '' },
     ...(round ? { round } : {}),
   };
 }
