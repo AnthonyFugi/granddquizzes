@@ -8,7 +8,7 @@ import { shuffle } from '../src/services/questionPicker.js';
 
 // Raise this whenever categories or questions are added to the seed files. On the next start the server adds
 // whatever is missing (existing questions are never changed), once per version.
-export const SEED_VERSION = 6;
+export const SEED_VERSION = 7;
 
 const read = (name) => JSON.parse(fs.readFileSync(new URL(`./data/${name}`, import.meta.url), 'utf8'));
 
