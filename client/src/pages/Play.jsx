@@ -67,8 +67,11 @@ function Frame({ code, title, banner, branding, children }) {
       {banner && <div className="banner" role="status">{banner}</div>}
       <main className="page">
         {hasBrand(branding) && <div style={{ marginBottom: 12 }}><OrgMark branding={branding} size={40} /></div>}
-        <div className="row between" style={{ marginBottom: 18 }}>
-          <span className="muted small">{title || 'Granddquiz'}</span>
+        <div className="play-head">
+          <div className="play-name">
+            <span className="play-eyebrow">Now playing</span>
+            <strong className="play-title" title={title || 'Granddquiz'}>{title || 'Granddquiz'}</strong>
+          </div>
           <CodeTiles code={code} size="small" />
         </div>
         {children}

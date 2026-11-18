@@ -365,3 +365,11 @@ button.chip { cursor: pointer; min-height: 40px; }
 .stage > .sound-controls button { border-color: rgba(255, 255, 255, 0.45); color: #fff; background: rgba(10, 61, 47, 0.85); opacity: 0.8; }
 .stage > .sound-controls button[aria-pressed='true'] { background: var(--copper); border-color: var(--copper); opacity: 1; }
 .stage > .sound-controls .sound-hint { color: #fff; background: rgba(10, 61, 47, 0.9); padding: 6px 12px; border-radius: 99px; text-align: center; }
+
+/* Player header: the quiz name is the headline, the join code sits beside it */
+.play-head { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin: 4px 0 22px; padding-bottom: 16px; border-bottom: 2px solid rgba(10, 61, 47, 0.12); }
+.play-name { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.play-eyebrow { font: 700 0.68rem var(--body); letter-spacing: 0.14em; text-transform: uppercase; color: var(--copper); }
+.play-title { font: 800 clamp(1.25rem, 5vw, 1.8rem) / 1.1 var(--display); color: var(--ink, #12281f); overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow-wrap: break-word; }
+
+@media (max-width: 520px) { .play-head { flex-direction: column; align-items: flex-start; gap: 12px; } .play-title { font-size: clamp(1.3rem, 6.4vw, 1.7rem); } }
