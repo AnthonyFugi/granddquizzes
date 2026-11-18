@@ -76,9 +76,11 @@ router.use((req, res, next) => (['POST', 'PUT', 'PATCH'].includes(req.method) ? 
 async function readSettings(b) {
     const title = String(b.title || '').trim();
     if (title.length < 3) throw new UserError('Give the event a title');
-    const questionCount = Math.min(100, Math.max(3, Number(b.questionCount) || 10));
+    const mode = b.mode === 'blitz' ? 'blitz' : 'classic';
+    const blitzSeconds = Math.min(900, Math.max(30, Number(b.blitzSeconds) || 120));
+    const questionCount = Math.min(mode === 'blitz' ? 300 : 100, Math.max(3, Number(b.questionCount) || (mode === 'blitz' ? 60 : 10)));
     const timeLimit = Math.min(120, Math.max(5, Number(b.timeLimit) || 20));
-    const difficulty = ['challenging', 'mixed', 'easy', 'medium', 'hard'].includes(b.difficulty) ? b.difficulty : 'challenging';
+    const difficulty = ['challenging', 'mixed', 'easy', 'medium', 'hard'].includes(b.difficulty) ? b.difficulty : 'hard';
     const marks = cleanMarks(b.marks);
     const rounds = b.rounds !== false;
 
@@ -107,14 +109,14 @@ async function readSettings(b) {
     if (Number.isNaN(scheduledFor.getTime())) throw new UserError('That date and time is not valid');
     if (scheduledFor.getTime() < Date.now() - 5 * 60000) throw new UserError('The scheduled time has already passed. Pick a time from now onwards, or leave it empty');
   }
-  return { title, categories, questionCount, timeLimit, difficulty, marks, rounds, prizes, scheduledFor };
+  return { title, mode, blitzSeconds, categories, questionCount, timeLimit, difficulty, marks, rounds: mode === 'blitz' ? false : rounds, prizes, scheduledFor };
 }
 
 router.post(
   '/',
   wrap(async (req, res) => {
     const b = req.body;
-    const { title, categories, questionCount, timeLimit, difficulty, marks, rounds, prizes, scheduledFor } = await readSettings(b);
+    const { title, mode, blitzSeconds, categories, questionCount, timeLimit, difficulty, marks, rounds, prizes, scheduledFor } = await readSettings(b);
 
     let event;
     for (let attempt = 0; attempt < 8; attempt++) {
@@ -123,6 +125,8 @@ router.post(
           title,
           joinCode: genCode(),
           host: req.user._id,
+          mode,
+          blitzSeconds,
           categories,
           questionCount,
           timeLimit,

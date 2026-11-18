@@ -2,8 +2,8 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import Band from '../components/Band.jsx';
 import { CodeTiles } from '../components/Code.jsx';
-import { Leaderboard, Option, RoundBanner, ScoreText, TimeNote, TimerBar, Waiting, ordinal } from '../components/Quiz.jsx';
-import { useCountdown, usePlayer } from '../hooks/useQuiz.js';
+import { Leaderboard, Option, RoundBanner, ScoreText, TimeNote, TimerBar, Waiting, blitzLength, ordinal, unitOf } from '../components/Quiz.jsx';
+import { useBlitzClock, useCountdown, usePlayer } from '../hooks/useQuiz.js';
 import { clearPlayer } from '../lib/socket.js';
 import { OrgMark, SponsorStrip } from '../components/Brand.jsx';
 import { brandVars, hasBrand } from '../lib/brand.js';
@@ -13,6 +13,7 @@ export default function Play() {
   const nav = useNavigate();
   const { phase, error, state, me, act, retry } = usePlayer(code);
   const clock = useCountdown(state);
+  const blitzClock = useBlitzClock(state);
 
   if (phase === 'kicked') {
     return (
@@ -46,6 +47,7 @@ export default function Play() {
   return (
     <Frame code={code} title={state.title} branding={state.branding} banner={phase === 'reconnecting' ? 'Connection lost. Reconnecting...' : ''}>
       {state.status === 'lobby' && <Lobby state={state} me={me} act={act} />}
+      {state.status === 'blitz' && <Blitz state={state} me={me} act={act} clock={blitzClock} />}
       {['question', 'locked'].includes(state.status) && <Question state={state} me={me} act={act} clock={clock} />}
       {state.status === 'reveal' && <Reveal state={state} me={me} />}
       {state.status === 'ended' && <Ended state={state} me={me} onLeave={() => { clearPlayer(code); nav('/'); }} />}
@@ -89,13 +91,13 @@ function Lobby({ state, me, act }) {
     <div className="stack">
       <h1>You are in, {me.nickname}.</h1>
       <Waiting>Waiting for the quiz master to start. {state.playerCount} {state.playerCount === 1 ? 'player is' : 'players are'} here.</Waiting>
-      <TimeNote seconds={state.timeLimit} />
+      {state.mode === 'blitz' ? <p className="time-note"><span aria-hidden="true">⚡</span> Blitz: you get <strong>{blitzLength(state.blitz.seconds)}</strong> to answer as many questions as you can. Each correct answer scores one point.</p> : <TimeNote seconds={state.timeLimit} />}
       {err && <p className="error" role="alert">{err}</p>}
 
       {team ? (
         <section>
           <h2>{team.name}</h2>
-          <p className="muted">{me.isLeader ? 'You are the team leader, so you pick the answer for everyone.' : `${team.leader} is the team leader and picks the answer for everyone.`}</p>
+          <p className="muted">{state.mode === 'blitz' ? 'In a blitz everyone on the team answers on their own phone. Your team score is everyone\'s correct answers added together.' : me.isLeader ? 'You are the team leader, so you pick the answer for everyone.' : `${team.leader} is the team leader and picks the answer for everyone.`}</p>
           <ul className="team-list">
             {team.members.map((m) => (
               <li key={m} className="row between">
@@ -111,7 +113,7 @@ function Lobby({ state, me, act }) {
       ) : (
         <section>
           <h2>Play with a team</h2>
-          <p className="muted">Create a team and you become its leader, who submits one answer for the group. Or join a team below. Playing solo is fine too.</p>
+          <p className="muted">{state.mode === 'blitz' ? 'Create a team or join one below. Everyone answers on their own phone and the team score is the total. Playing solo is fine too.' : 'Create a team and you become its leader, who submits one answer for the group. Or join a team below. Playing solo is fine too.'}</p>
           <form
             className="row"
             onSubmit={async (e) => {
@@ -139,6 +141,63 @@ function Lobby({ state, me, act }) {
   );
 }
 
+function Blitz({ state, me, act, clock }) {
+  const [shown, setShown] = useState(me.blitz);
+  const [best, setBest] = useState(me.blitz);
+  const [flash, setFlash] = useState(null); // { choice, correctIndex, correct } while the last answer is on show
+  const [err, setErr] = useState('');
+  useEffect(() => {
+    const b = me.blitz;
+    if (!b) return;
+    if (b.pos >= best.pos) setBest(b);
+    if (!flash && (b.pos > shown.pos || (!shown.question && b.question))) setShown(b);
+  }, [me.blitz]);
+
+  const q = shown?.question;
+  const over = clock.left <= 0;
+  const send = async (choice) => {
+    if (flash || over || !q) return;
+    setErr('');
+    setFlash({ choice, correctIndex: null, correct: null });
+    const r = await act('blitz:answer', { choice });
+    if (!r.ok) { setFlash(null); setErr(r.error); return; }
+    setBest(r.blitz);
+    setFlash({ choice, correctIndex: r.correctIndex, correct: r.correct, skipped: r.skipped });
+    setTimeout(() => { setShown(r.blitz); setFlash(null); }, r.skipped ? 150 : r.correct ? 450 : 1100);
+  };
+
+  const tally = best || shown;
+  return (
+    <div>
+      <TimerBar fraction={clock.fraction} left={clock.left} />
+      <div className="q-meta">
+        <span><strong>{tally.correct}</strong> correct</span>
+        <span className="muted">{tally.wrong} wrong{tally.skipped ? `, ${tally.skipped} skipped` : ''}</span>
+        {me.rank && <span className="muted">You are {ordinal(me.rank)} of {me.of}</span>}
+      </div>
+      {!q && shown?.done && <div className="verdict good"><h1 style={{ marginBottom: 4 }}>You answered every question.</h1><p style={{ margin: 0 }}>{tally.correct} correct. Waiting for the clock to run out.</p></div>}
+      {!q && !shown?.done && <Waiting>Getting your first question</Waiting>}
+      {q && (
+        <>
+          <div className="q-meta"><span className="chip">{q.category?.icon} {q.category?.name}</span><span className="muted small">Question {shown.pos + 1}</span></div>
+          <h1 className="q-text">{q.text}</h1>
+          <div className="options">
+            {q.options.map((text, i) => (
+              <Option key={i} index={i} text={text} onClick={() => send(i)} disabled={!!flash || over}
+                picked={flash?.choice === i} correct={flash?.correctIndex === i} dim={!!flash && flash.correctIndex != null && flash.correctIndex !== i && flash.choice !== i} />
+            ))}
+          </div>
+          <div className="row" style={{ marginTop: 14 }}>
+            <button className="btn quiet small" onClick={() => send(-1)} disabled={!!flash || over}>Skip this question</button>
+            <p aria-live="polite" style={{ margin: 0 }}><strong>{flash?.correct === true ? 'Correct' : flash?.correct === false ? 'Not this one' : over ? 'Time is up' : ''}</strong></p>
+          </div>
+        </>
+      )}
+      {err && <p className="error" role="alert">{err}</p>}
+    </div>
+  );
+}
+
 function Question({ state, me, act, clock }) {
   const q = state.question;
   const locked = state.status === 'locked';
@@ -156,7 +215,8 @@ function Question({ state, me, act, clock }) {
   };
 
   let note = '';
-  if (locked) note = 'Time is up. Waiting for the answer.';
+  if (locked && chosen != null) note = me.teamId ? 'Answer locked in for your team. Waiting for the reveal.' : 'Answer locked in. Waiting for the reveal.';
+  else if (locked) note = 'Time is up. Waiting for the reveal.';
   else if (chosen != null) note = me.teamId ? 'Answer locked in for your team.' : 'Answer locked in.';
   else if (me.teamId && !me.isLeader) note = `${me.leaderName} answers for ${me.teamName}.`;
 
@@ -218,10 +278,10 @@ function Ended({ state, me, onLeave }) {
       {mine ? (
         <div className="verdict good"><h2 style={{ marginBottom: 4 }}>You won a prize.</h2><p style={{ margin: 0 }}>{mine.prize} for finishing {ordinal(mine.rank)}. Find the quiz master to collect it.</p></div>
       ) : me.rank ? (
-        <p>You finished {ordinal(me.rank)} of {me.of} with <strong><ScoreText score={me.score} possible={me.possible} /></strong> marks. Thanks for playing.</p>
+        <p>You finished {ordinal(me.rank)} of {me.of} with <strong><ScoreText score={me.score} possible={me.possible} /></strong> {unitOf(state)}. Thanks for playing.</p>
       ) : null}
       <h2>Final standings</h2>
-      <Leaderboard rows={state.leaderboard || []} meKey={meKeyOf(me)} limit={10} prizes={state.prizes} possible={state.possible} />
+      <Leaderboard rows={state.leaderboard || []} meKey={meKeyOf(me)} limit={10} prizes={state.prizes} possible={state.possible} unit={state.mode === 'blitz' ? 'correct' : ''} />
       <p className="muted small" style={{ marginTop: 18 }}>Only the top 10 nicknames and scores are kept, for a limited time, then deleted automatically. Registered players can sign up for the next event.</p>
       <button className="btn secondary" onClick={onLeave}>Done</button>
     </div>

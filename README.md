@@ -21,7 +21,7 @@ cp .env.example .env        # set MONGODB_URI, JWT_SECRET, ADMIN_EMAIL, ADMIN_PA
 npm install
 npm run validate            # checks the seed files (no database needed)
 npm test                    # plays a full quiz over real sockets (no database needed)
-npm run dev                 # on first start the DB is filled with 11 categories / 481 questions
+npm run dev                 # on first start the DB is filled with 11 categories / 620 questions
                             # and the admin account is created from ADMIN_EMAIL / ADMIN_PASSWORD
 
 cd ../client && npm install && npm run dev    # http://localhost:5173, proxies /api and sockets to the server on :5001
@@ -36,7 +36,11 @@ npm run seed          # add anything missing; never overwrites edits or your own
 npm run seed:reset    # re-insert the seed questions with fresh answer order (your own questions untouched)
 ```
 
-## Seed content (481 questions)
+## Blitz mode
+
+When creating an event, choose **Blitz: race the clock**. Everyone plays at once on their own phone and answers as many questions as they can before the blitz length runs out (30 seconds to 15 minutes). Each player gets the same question pool in their own random order and can skip a question for free. Score = number of correct answers. Ties go to fewer wrong answers, then faster correct answers. A team's score is its members' correct answers added together. The big screen shows the countdown and a live leaderboard. Everything else (QR join, scheduling, prizes, CSV, reset, play again) works as in a classic quiz.
+
+## Seed content (620 questions)
 
 | Category | Qs | Category | Qs |
 |---|---|---|---|

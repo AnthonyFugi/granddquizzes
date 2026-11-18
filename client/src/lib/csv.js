@@ -14,6 +14,7 @@ export function csvCell(value) {
 
 /** state: { leaderboard: [{rank,name,kind,score,id,size}], teams: [{id,members}], prizes: [{place,label}], possible } */
 export function resultsCsv(state) {
+  if (state.mode === 'blitz') return blitzCsv(state);
   const prizeFor = (rank) => (state.prizes || []).find((p) => p.place === rank)?.label || '';
   const members = new Map((state.teams || []).map((t) => [t.id, t.members || []]));
   const rows = (state.leaderboard || []).map((r) => [
@@ -28,6 +29,17 @@ export function resultsCsv(state) {
   ]);
   const lines = [['Rank', 'Name', 'Type', 'Members', 'Marks', 'Out of', 'Percent', 'Prize'], ...rows].map((r) => r.map(csvCell).join(','));
   // BOM so Excel reads names with accents correctly; CRLF is what spreadsheets expect
+  return `\uFEFF${lines.join('\r\n')}\r\n`;
+}
+
+function blitzCsv(state) {
+  const prizeFor = (rank) => (state.prizes || []).find((p) => p.place === rank)?.label || '';
+  const members = new Map((state.teams || []).map((t) => [t.id, t.members || []]));
+  const rows = (state.leaderboard || []).map((r) => [
+    r.rank, r.name, r.kind === 'team' ? 'Team' : 'Solo', r.kind === 'team' ? (members.get(r.id) || []).join('; ') : '',
+    r.score, r.wrong ?? '', r.score > 0 ? prizeFor(r.rank) : '',
+  ]);
+  const lines = [['Rank', 'Name', 'Type', 'Members', 'Correct answers', 'Wrong answers', 'Prize'], ...rows].map((r) => r.map(csvCell).join(','));
   return `\uFEFF${lines.join('\r\n')}\r\n`;
 }
 

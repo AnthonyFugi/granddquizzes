@@ -2,8 +2,8 @@ import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import Shell from '../components/Shell.jsx';
 import { CodeTiles } from '../components/Code.jsx';
-import { Leaderboard, Option, RoundBanner, ScoreText, TimerBar, Waiting } from '../components/Quiz.jsx';
-import { useCountdown, useHost } from '../hooks/useQuiz.js';
+import { Leaderboard, Option, RoundBanner, ScoreText, TimerBar, Waiting, blitzLength, unitOf } from '../components/Quiz.jsx';
+import { useBlitzClock, useCountdown, useHost } from '../hooks/useQuiz.js';
 import { useAuth } from '../lib/auth.jsx';
 import { downloadCsv, resultsCsv, resultsFilename } from '../lib/csv.js';
 import { SignIn } from './Host.jsx';
@@ -17,6 +17,7 @@ export default function HostConsole() {
 function Console({ eventId, token }) {
   const { phase, error, state, info, meta, act, retry } = useHost(eventId, token);
   const clock = useCountdown(state);
+  const blitzClock = useBlitzClock(state);
   const [msg, setMsg] = useState('');
   const run = async (event, data) => {
     const r = await act(event, data);
@@ -63,9 +64,26 @@ function Console({ eventId, token }) {
             <div className="stack">
               <h2>Lobby</h2>
               <p>Share the code or put the big screen on a projector. Start when everyone is in. Teams lock once the first question starts.</p>
+              {state.mode === 'blitz' ? (
+                <p className="muted">⚡ Blitz: {meta.totalQuestions} questions in the pool. Everyone answers as many as they can in {blitzLength(state.blitz.seconds)}, each on their own phone and in their own order. Score = correct answers; a team's score is its members' total.</p>
+              ) : (
               <p className="muted">{meta.totalQuestions} questions ready, {state.timeLimit} seconds each, {state.marks} marks for every correct answer ({state.maxPossible} in all). Every question is timed and locks automatically when the clock reaches zero.</p>
+              )}
               {state.rounds?.length > 1 && <p className="muted">Rounds: {state.rounds.map((r, i) => `${i + 1}. ${r.icon} ${r.name} (${r.size})`).join('   ')}</p>}
-              <button className="btn" disabled={state.playerCount === 0} onClick={() => run('host:next')}>Start question 1</button>
+              <button className="btn" disabled={state.playerCount === 0} onClick={() => run('host:next')}>{state.mode === 'blitz' ? `Start the ${blitzLength(state.blitz.seconds)} blitz` : 'Start question 1'}</button>
+            </div>
+          )}
+
+          {st === 'blitz' && (
+            <div>
+              <h2>Blitz in progress</h2>
+              <TimerBar fraction={blitzClock.fraction} left={blitzClock.left} />
+              <p className="muted">Everyone is answering at their own pace. The blitz ends by itself when the clock reaches zero, or you can end it now.</p>
+              <h3 className="section">Live leaderboard</h3>
+              <Leaderboard rows={state.leaderboard || []} limit={10} prizes={state.prizes} unit="correct" />
+              <div className="row" style={{ marginTop: 18 }}>
+                <button className="btn copper" onClick={() => window.confirm('End the blitz now and show the winners?') && run('host:end')}>End blitz now</button>
+              </div>
             </div>
           )}
 
@@ -99,12 +117,12 @@ function Console({ eventId, token }) {
             <div>
               <h2>Quiz finished</h2>
               {state.winners?.length > 0 && (
-                <ul className="team-list">{state.winners.map((w) => <li key={w.key}><strong>{w.prize}</strong>: {w.name} (<ScoreText score={w.score} possible={state.possible} /> marks)</li>)}</ul>
+                <ul className="team-list">{state.winners.map((w) => <li key={w.key}><strong>{w.prize}</strong>: {w.name} (<ScoreText score={w.score} possible={state.possible} /> {unitOf(state)})</li>)}</ul>
               )}
-              <Leaderboard rows={state.leaderboard || []} limit={10} prizes={state.prizes} possible={state.possible} />
+              <Leaderboard rows={state.leaderboard || []} limit={10} prizes={state.prizes} possible={state.possible} unit={state.mode === 'blitz' ? 'correct' : ''} />
               <div className="row" style={{ marginTop: 18 }}>
                 <button className="btn" onClick={() => downloadCsv(resultsFilename(state.title), resultsCsv(state))}>Download results (CSV)</button>
-                <button className="btn secondary" onClick={() => window.confirm('Play this quiz again from question 1 with the same questions? Scores go back to zero and the results above are cleared.') && run('host:restart')}>Play again</button>
+                <button className="btn secondary" onClick={() => window.confirm('Play this quiz again with the same questions? Scores go back to zero and the results above are cleared.') && run('host:restart')}>Play again</button>
                 <Link className="btn secondary" to="/host">Back to events</Link>
               </div>
               <p className="muted small">The full list is only available now. After you leave, the server keeps just the top 10 names and scores.</p>

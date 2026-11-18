@@ -50,7 +50,7 @@ const deps = {
   store,
   async authorizeHost(token) {
     if (token !== TOKEN) throw new UserError('Please sign in again');
-    return { id: event._id, title: event.title, joinCode: CODE, categories: [], questionCount: COUNT, timeLimit: TIME, difficulty: 'mixed', prizes };
+    return { id: event._id, title: event.title, joinCode: CODE, categories: [], questionCount: COUNT, timeLimit: TIME, difficulty: 'mixed', prizes, ...(process.env.DEMO_BLITZ ? { mode: 'blitz', blitzSeconds: Number(process.env.DEMO_BLITZ) } : {}) };
   },
   async loadQuestions() { return demoQuestions(); },
   async markLive() { event.status = 'live'; },

@@ -22,6 +22,8 @@ function summarize(event, host) {
     questionCount: event.questionCount,
     timeLimit: event.timeLimit,
     difficulty: event.difficulty,
+    mode: event.mode === 'blitz' ? 'blitz' : 'classic',
+    blitzSeconds: event.blitzSeconds ?? 120,
     marks: event.marks ?? 10,
     rounds: event.rounds !== false,
     prizes: event.prizes.map((p) => ({ place: p.place, label: p.label })),
@@ -71,7 +73,7 @@ export const mongoDeps = {
       categoryIds: event.categories,
       count: event.questionCount,
       difficulty: event.difficulty,
-      rounds: event.rounds,
+      rounds: event.mode === 'blitz' ? false : event.rounds,
     });
   },
 

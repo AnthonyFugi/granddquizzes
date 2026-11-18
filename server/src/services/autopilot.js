@@ -15,7 +15,12 @@ export function autopilotStep(s, now = Date.now()) {
     if (s.players.size === 0 || now < s.startAt) { s.autoGo = null; return null; }
     if (s.autoGo == null) s.autoGo = now - s.startAt < 6000 ? now : now + AUTO_LATE_GRACE_MS;
     if (now < s.autoGo) return null;
-    try { s.next(); s.autoGo = null; return 'changed'; } catch (e) { if (e instanceof UserError) return null; throw e; }
+    try { s.begin(); s.autoGo = null; return 'changed'; } catch (e) { if (e instanceof UserError) return null; throw e; }
+  }
+
+  if (s.status === 'blitz') {
+    if (now >= s.endsAt) { s.end(); return 'ended'; }
+    return null;
   }
 
   if (s.status === 'question') {

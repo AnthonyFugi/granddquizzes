@@ -122,3 +122,21 @@ export function useCountdown(state) {
   const left = Math.max(0, state.question.endsAt - (Date.now() + offset.current));
   return { left: left / 1000, fraction: Math.min(1, left / (state.question.timeLimit * 1000)) };
 }
+
+/** Blitz clock: seconds left in the whole round, on the server's clock. */
+export function useBlitzClock(state) {
+  const offset = useRef(0);
+  const [, tick] = useState(0);
+  useEffect(() => {
+    if (state?.serverTime) offset.current = state.serverTime - Date.now();
+  }, [state?.serverTime]);
+  const live = state?.status === 'blitz' && state.blitz;
+  useEffect(() => {
+    if (!live) return undefined;
+    const id = setInterval(() => tick((n) => n + 1), 250);
+    return () => clearInterval(id);
+  }, [live]);
+  if (!live) return { left: 0, fraction: 0 };
+  const left = Math.max(0, state.blitz.endsAt - (Date.now() + offset.current));
+  return { left: left / 1000, fraction: Math.min(1, left / (state.blitz.seconds * 1000)) };
+}

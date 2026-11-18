@@ -5,8 +5,8 @@ import Band from '../components/Band.jsx';
 import { SponsorStrip, StageHeader } from '../components/Brand.jsx';
 import { brandVars } from '../lib/brand.js';
 import { CodeTiles } from '../components/Code.jsx';
-import { Leaderboard, Option, RoundBanner, ScoreText, TimerBar, Waiting } from '../components/Quiz.jsx';
-import { useCountdown, useScreen } from '../hooks/useQuiz.js';
+import { Leaderboard, Option, RoundBanner, ScoreText, TimerBar, Waiting, blitzLength, unitOf } from '../components/Quiz.jsx';
+import { useBlitzClock, useCountdown, useScreen } from '../hooks/useQuiz.js';
 import { useScreenSounds } from '../hooks/useSounds.js';
 import { setSound } from '../lib/sound.js';
 
@@ -25,9 +25,10 @@ export default function Screen() {
   const code = useParams().code.toUpperCase();
   const { phase, error, state, retry } = useScreen(code);
   const clock = useCountdown(state);
+  const blitzClock = useBlitzClock(state);
   const [sound, setSoundState] = useState(false);
   useScreenSounds(state, clock.left);
-  const showJoinCorner = !!state && ['question', 'locked', 'reveal'].includes(state.status);
+  const showJoinCorner = !!state && ['question', 'locked', 'reveal', 'blitz'].includes(state.status);
 
   return (
     <div className="stage" style={brandVars(state?.branding)}>
@@ -54,6 +55,7 @@ export default function Screen() {
         {phase !== 'error' && !state && <Waiting>Connecting to quiz {code}</Waiting>}
         {state?.status === 'lobby' && <Lobby state={state} code={code} />}
         {state && ['question', 'locked'].includes(state.status) && <Question state={state} clock={clock} />}
+        {state?.status === 'blitz' && <BlitzView state={state} clock={blitzClock} />}
         {state?.status === 'reveal' && <Reveal state={state} />}
         {state?.status === 'ended' && <Ended state={state} />}
         </div>
@@ -75,9 +77,19 @@ function Lobby({ state, code }) {
         <p style={{ fontSize: 'clamp(1rem, 2.6vh, 1.4rem)', margin: '0 0 1vh' }}>On your phone, go to <strong>{window.location.host}</strong> and enter</p>
         <CodeTiles code={code} size="big" animate />
         <ul className="facts" aria-label="About this quiz">
-          <li><strong>{state.totalQuestions}</strong> questions</li>
-          <li><strong>{state.timeLimit}</strong> seconds each</li>
-          <li><strong>{state.marks}</strong> {state.marks === 1 ? 'mark' : 'marks'} per correct answer ({state.maxPossible} in all)</li>
+          {state.mode === 'blitz' ? (
+            <>
+              <li>⚡ <strong>Blitz:</strong> {blitzLength(state.blitz.seconds)} on the clock</li>
+              <li>Answer as many as you can</li>
+              <li><strong>1</strong> point per correct answer</li>
+            </>
+          ) : (
+            <>
+              <li><strong>{state.totalQuestions}</strong> questions</li>
+              <li><strong>{state.timeLimit}</strong> seconds each</li>
+              <li><strong>{state.marks}</strong> {state.marks === 1 ? 'mark' : 'marks'} per correct answer ({state.maxPossible} in all)</li>
+            </>
+          )}
         </ul>
         {state.rounds?.length > 1 && (
           <p className="rounds-line"><strong>{state.rounds.length} rounds:</strong> {state.rounds.map((r) => `${r.icon} ${r.name}`.trim()).join('  ·  ')}</p>
@@ -120,12 +132,30 @@ function Question({ state, clock }) {
         <span style={{ fontSize: '1.3rem' }}>Question {q.index + 1} of {q.total}</span>
         <span style={{ fontSize: '1.3rem' }}>{state.marks} {state.marks === 1 ? 'mark' : 'marks'}</span>
         <span className="chip">{q.category?.icon} {q.category?.name}</span>
-        <span style={{ fontSize: '1.3rem' }} aria-live="polite">{locked ? 'Time is up' : `${state.answeredCount} of ${state.expectedCount} answered`}</span>
+        <span style={{ fontSize: '1.3rem' }} aria-live="polite">{locked ? (state.answeredCount >= state.expectedCount && state.expectedCount > 0 ? 'Everyone has answered' : 'Time is up') : `${state.answeredCount} of ${state.expectedCount} answered`}</span>
       </div>
       <TimerBar fraction={locked ? 0 : clock.fraction} left={clock.left} />
       <h1 className="q-text">{q.text}</h1>
       <div className="options cols">
         {q.options.map((text, i) => <Option key={i} index={i} text={text} disabled />)}
+      </div>
+    </div>
+  );
+}
+
+function BlitzView({ state, clock }) {
+  const rows = useFitRows(0.62);
+  return (
+    <div className="stage-grid">
+      <div>
+        <h1>⚡ Blitz!</h1>
+        <TimerBar fraction={clock.fraction} left={clock.left} />
+        <p className="muted" style={{ fontSize: 'clamp(1rem, 2.6vh, 1.5rem)', margin: '1.5vh 0' }}>Answer as many questions as you can on your phone. One point for every correct answer.</p>
+        <p style={{ fontSize: 'clamp(1rem, 2.6vh, 1.5rem)' }}>{state.playerCount} {state.playerCount === 1 ? 'player' : 'players'} racing</p>
+      </div>
+      <div>
+        <h2>Live leaderboard</h2>
+        <Leaderboard rows={state.leaderboard || []} limit={rows} prizes={state.prizes} unit="correct" />
       </div>
     </div>
   );
@@ -171,14 +201,14 @@ function Ended({ state }) {
           <div key={w.key} style={{ marginBottom: '1.6vh' }}>
             <div className="muted" style={{ fontSize: 'clamp(0.95rem, 2.4vh, 1.2rem)' }}>{w.prize}</div>
             <div style={{ font: '700 clamp(1.4rem, min(3.4vw, 5.4vh), 3.2rem) var(--display)' }}>{w.name}</div>
-            <div><ScoreText score={w.score} possible={state.possible} /> marks</div>
+            <div><ScoreText score={w.score} possible={state.possible} /> {unitOf(state)}</div>
           </div>
         ))}
       </div>
       <div>
         <h2>Final standings</h2>
-        <p className="muted" style={{ margin: '-6px 0 8px', fontSize: '1.1rem' }}>Out of {state.possible} marks</p>
-        <Leaderboard rows={state.leaderboard || []} limit={rows} prizes={state.prizes} possible={state.possible} />
+        {state.possible > 0 && <p className="muted" style={{ margin: '-6px 0 8px', fontSize: '1.1rem' }}>Out of {state.possible} marks</p>}
+        <Leaderboard rows={state.leaderboard || []} limit={rows} prizes={state.prizes} possible={state.possible} unit={state.mode === 'blitz' ? 'correct' : ''} />
       </div>
     </div>
   );

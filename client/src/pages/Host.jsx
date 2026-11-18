@@ -92,7 +92,7 @@ function EventRow({ ev, onDelete, onChanged }) {
         <div>
           <h3 style={{ marginBottom: 4 }}>{ev.title} <span className={`status ${ev.status}`}>{ev.status}</span> <span className={`plan-badge ${ev.entitlements?.plan === 'free' ? '' : 'paid'}`}>{ev.entitlements ? `${ev.entitlements.planName}, up to ${ev.entitlements.maxPlayers} players` : ''}</span></h3>
           <div className="muted small">
-            {ev.questionCount} questions, {ev.timeLimit}s each, {ev.marks || 10} marks per question ({ev.questionCount * (ev.marks || 10)} in all)
+            {ev.mode === 'blitz' ? `⚡ Blitz: ${Math.round((ev.blitzSeconds || 120) / 6) / 10} min, ${ev.questionCount} question pool, 1 point per correct answer` : `${ev.questionCount} questions, ${ev.timeLimit}s each, ${ev.marks || 10} marks per question (${ev.questionCount * (ev.marks || 10)} in all)`}
             {ev.categories?.length ? `, ${ev.categories.map((c) => c.name).join(', ')}${ev.categories.length > 1 && ev.rounds !== false ? ' (one round each)' : ''}` : ', all categories'}
             {ev.scheduledFor ? `. Scheduled ${new Date(ev.scheduledFor).toLocaleString()}` : ''}
           </div>
@@ -138,7 +138,7 @@ function EditEvent({ ev, onSaved, onCancel }) {
     <CreateEvent
       cats={cats}
       editing={ev}
-      initial={{ title: ev.title, questionCount: ev.questionCount, timeLimit: ev.timeLimit, difficulty: ev.difficulty || 'mixed', marks: ev.marks || 10, rounds: ev.rounds !== false, scheduledFor: toLocalInput(ev.scheduledFor), p1: pz(1), p2: pz(2), p3: pz(3) }}
+      initial={{ title: ev.title, mode: ev.mode || 'classic', blitzSeconds: ev.blitzSeconds || 120, questionCount: ev.questionCount, timeLimit: ev.timeLimit, difficulty: ev.difficulty || 'mixed', marks: ev.marks || 10, rounds: ev.rounds !== false, scheduledFor: toLocalInput(ev.scheduledFor), p1: pz(1), p2: pz(2), p3: pz(3) }}
       initialPicked={(ev.categories || []).map((c) => c._id || c)}
       onCancel={onCancel}
       onCreated={onSaved}
@@ -147,7 +147,7 @@ function EditEvent({ ev, onSaved, onCancel }) {
 }
 
 function CreateEvent({ cats, onCancel, onCreated, editing, initial, initialPicked }) {
-  const [f, setF] = useState(initial || { title: '', questionCount: 15, timeLimit: 20, difficulty: 'challenging', marks: 10, rounds: true, scheduledFor: '', p1: '', p2: '', p3: '' });
+  const [f, setF] = useState(initial || { title: '', mode: 'classic', blitzSeconds: 120, questionCount: 15, timeLimit: 20, difficulty: 'hard', marks: 10, rounds: true, scheduledFor: '', p1: '', p2: '', p3: '' });
   const [picked, setPicked] = useState(new Set(initialPicked || []));
   const [brand, setBrand] = useState(emptyBranding);
   const [err, setErr] = useState('');
@@ -162,7 +162,7 @@ function CreateEvent({ cats, onCancel, onCreated, editing, initial, initialPicke
       const ev = await api(editing ? `/events/${editing._id}` : '/events', {
         method: editing ? 'PUT' : 'POST',
         body: {
-          title: f.title, questionCount: Number(f.questionCount), timeLimit: Number(f.timeLimit), difficulty: f.difficulty, marks: Number(f.marks) || 10, rounds: !!f.rounds,
+          title: f.title, mode: f.mode, blitzSeconds: Number(f.blitzSeconds) || 120, questionCount: Number(f.questionCount), timeLimit: Number(f.timeLimit), difficulty: f.difficulty, marks: Number(f.marks) || 10, rounds: !!f.rounds,
           categories: [...picked], scheduledFor: f.scheduledFor ? new Date(f.scheduledFor).toISOString() : undefined, ...(editing ? {} : { branding: brandingBody(brand) }),
           prizes: [f.p1, f.p2, f.p3].map((label, i) => ({ place: i + 1, label })).filter((p) => p.label.trim()),
         },
@@ -174,6 +174,14 @@ function CreateEvent({ cats, onCancel, onCreated, editing, initial, initialPicke
   return (
     <form onSubmit={submit} className="section" style={{ maxWidth: 680 }}>
       <h2>{editing ? 'Edit quiz' : 'New event'}</h2>
+      <div className="field">
+        <span className="label">Quiz style</span>
+        <div className="row" role="group" aria-label="Quiz style">
+          <button type="button" className={`chip ${f.mode !== 'blitz' ? 'on' : ''}`} aria-pressed={f.mode !== 'blitz'} onClick={() => setF({ ...f, mode: 'classic', questionCount: f.mode === 'blitz' ? 15 : f.questionCount })}>Classic: one question at a time</button>
+          <button type="button" className={`chip ${f.mode === 'blitz' ? 'on' : ''}`} aria-pressed={f.mode === 'blitz'} onClick={() => setF({ ...f, mode: 'blitz', questionCount: f.mode === 'blitz' ? f.questionCount : 60 })}>⚡ Blitz: race the clock</button>
+        </div>
+        <span className="muted small">{f.mode === 'blitz' ? 'Everyone plays at once on their own phone, answering as many questions as they can before the time runs out. Score = number of correct answers.' : 'The quiz master moves through the questions together with the room, with a timer on each.'}</span>
+      </div>
       <div className="field"><label htmlFor="t">Event name</label><input id="t" value={f.title} onChange={set('title')} maxLength={100} placeholder="Friday quiz night" required /></div>
       <div className="field">
         <span className="label">Categories</span>
@@ -186,23 +194,32 @@ function CreateEvent({ cats, onCancel, onCreated, editing, initial, initialPicke
           ))}
         </div>
       </div>
-      {picked.size > 1 && (
+      {picked.size > 1 && f.mode !== 'blitz' && (
         <label className="check"><input type="checkbox" checked={!!f.rounds} onChange={(e) => setF({ ...f, rounds: e.target.checked })} /> Play in rounds: one category at a time, with a round title on the screen and the standings after each round. Untick to mix the categories together.</label>
       )}
       <div className="row" style={{ alignItems: 'flex-start' }}>
-        <div className="field grow"><label htmlFor="n">Questions</label><input id="n" type="number" min="3" max="100" value={f.questionCount} onChange={set('questionCount')} /></div>
-        <div className="field grow"><label htmlFor="s">Timer (seconds)</label><input id="s" type="number" min="5" max="120" value={f.timeLimit} onChange={set('timeLimit')} /></div>
+        <div className="field grow"><label htmlFor="n">{f.mode === 'blitz' ? 'Question pool' : 'Questions'}</label><input id="n" type="number" min="3" max={f.mode === 'blitz' ? 300 : 100} value={f.questionCount} onChange={set('questionCount')} /></div>
+        {f.mode === 'blitz'
+          ? <div className="field grow"><label htmlFor="bs">Blitz length (seconds)</label><input id="bs" type="number" min="30" max="900" value={f.blitzSeconds} onChange={set('blitzSeconds')} /></div>
+          : <div className="field grow"><label htmlFor="s">Timer (seconds)</label><input id="s" type="number" min="5" max="120" value={f.timeLimit} onChange={set('timeLimit')} /></div>}
         <div className="field grow"><label htmlFor="d">Difficulty</label>
-          <select id="d" value={f.difficulty} onChange={set('difficulty')}><option value="challenging">Adult level (medium and hard)</option><option value="mixed">Mixed (easy to hard)</option><option value="easy">Easy</option><option value="medium">Medium</option><option value="hard">Hardest only</option></select></div>
+          <select id="d" value={f.difficulty} onChange={set('difficulty')}><option value="hard">Hard (adult level)</option><option value="challenging">Medium and hard</option><option value="medium">Medium</option><option value="mixed">Mixed (easy to hard)</option><option value="easy">Easy</option></select></div>
       </div>
-      <div className="field">
+      {f.mode === 'blitz' && (
+        <div className="field">
+          <span className="label">Blitz length</span>
+          <div className="presets" role="group" aria-label="Blitz length presets">{[60, 120, 180, 300, 600].map((n) => <button type="button" key={n} className={`chip ${Number(f.blitzSeconds) === n ? 'on' : ''}`} aria-pressed={Number(f.blitzSeconds) === n} onClick={() => setF({ ...f, blitzSeconds: n })}>{n / 60} min</button>)}</div>
+          <span className="muted small">Every player gets the same questions in their own random order, so the pool should be bigger than the most anyone can answer in time (about {Math.ceil((Number(f.blitzSeconds) || 120) / 6)} questions in {Math.round((Number(f.blitzSeconds) || 120) / 60 * 10) / 10} minutes is a fast player). Skipping a question costs nothing. Ties go to the player with fewer wrong answers, then the faster correct answers. A team's score is its members' correct answers added together.</span>
+        </div>
+      )}
+      {f.mode !== 'blitz' && <div className="field">
         <span className="label">Timer presets</span>
         <div className="presets" role="group" aria-label="Timer presets">{[10, 20, 30, 45, 60].map((n) => <button type="button" key={n} className={`chip ${Number(f.timeLimit) === n ? 'on' : ''}`} aria-pressed={Number(f.timeLimit) === n} onClick={() => setF({ ...f, timeLimit: n })}>{n}s</button>)}</div>
         <span className="muted small">Every question is timed (5 to 120 seconds). Answers lock automatically when the clock reaches zero.</span>
-      </div>
-      <div className="field"><label htmlFor="mk">Marks for each correct answer</label>
+      </div>}
+      {f.mode !== 'blitz' && <div className="field"><label htmlFor="mk">Marks for each correct answer</label>
         <input id="mk" type="number" min="1" max="100" value={f.marks} onChange={set('marks')} style={{ maxWidth: 140 }} />
-        <span className="muted small">Every question is worth the same. The quiz is out of {(Number(f.questionCount) || 0) * (Number(f.marks) || 0)} marks in all. If two players tie, the faster correct answers win.</span></div>
+        <span className="muted small">Every question is worth the same. The quiz is out of {(Number(f.questionCount) || 0) * (Number(f.marks) || 0)} marks in all. If two players tie, the faster correct answers win.</span></div>}
       <div className="field"><span className="label">Prizes (optional)</span>
         <input aria-label="First prize" placeholder="1st place prize" value={f.p1} onChange={set('p1')} />
         <input aria-label="Second prize" placeholder="2nd place prize" value={f.p2} onChange={set('p2')} />

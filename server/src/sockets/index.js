@@ -33,7 +33,7 @@ export function registerSockets(io, deps) {
   function schedule(session) {
     if (pending.has(session.code)) return;
     pending.add(session.code);
-    setTimeout(() => broadcast(session), 150);
+    setTimeout(() => broadcast(session), session.mode === 'blitz' ? 1500 : 150); // blitz answers are constant, so updates go out about once a second and a half
   }
 
   async function openSession(event, { auto = false } = {}) {
@@ -52,9 +52,12 @@ export function registerSockets(io, deps) {
       maxPlayers: event.maxPlayers ?? Infinity,
       branding: event.branding || { poweredBy: true },
       marks: event.marks,
+      mode: event.mode,
+      blitzSeconds: event.blitzSeconds,
     });
     session.event = event; // kept so the quiz master can reset it with a fresh set of questions
     session.onChange = () => broadcast(session);
+    session.onTimeUp = () => { finish(session); }
     session.auto = auto;
     session.startAt = event.scheduledFor || 0;
     store.add(session);
@@ -63,6 +66,8 @@ export function registerSockets(io, deps) {
   }
 
   async function finish(s) {
+    if (s.finishing) return; // the timer, the scheduler and the quiz master can all end a quiz; save it once
+    s.finishing = true;
     try {
       await deps.persistEnd?.(s);
     } catch (e) {
@@ -76,6 +81,7 @@ export function registerSockets(io, deps) {
   async function reopen(s) {
     if (s.status !== 'ended') return;
     clearTimeout(s.removeTimer);
+    s.finishing = false;
     await deps.markLive?.({ id: s.eventId });
   }
 
@@ -154,7 +160,7 @@ export function registerSockets(io, deps) {
 
     on(socket, 'host:next', () => {
       const s = hostSession();
-      s.next();
+      s.begin();
       broadcast(s);
     });
     on(socket, 'host:lock', () => {
@@ -189,7 +195,7 @@ export function registerSockets(io, deps) {
       await reopen(s);
       s.resetTo();
       s.auto = false;
-      s.next();
+      s.begin();
       broadcast(s);
     });
     on(socket, 'host:setLeader', ({ teamId, playerId }) => {
@@ -257,6 +263,14 @@ export function registerSockets(io, deps) {
       const { session, player } = playerCtx();
       session.claimLeader(player.id);
       broadcast(session);
+    });
+
+    // Blitz: answer (or skip with choice -1) and get your next question straight back
+    on(socket, 'blitz:answer', ({ choice }) => {
+      const { session, player } = playerCtx();
+      const r = session.blitzAnswer(player.id, choice);
+      schedule(session);
+      return r;
     });
 
     on(socket, 'answer:submit', ({ choice }) => {

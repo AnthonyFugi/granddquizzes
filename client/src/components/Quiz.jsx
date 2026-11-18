@@ -58,7 +58,7 @@ export function RoundBanner({ round, big = false }) {
   );
 }
 
-export function Leaderboard({ rows, meKey, limit = 8, prizes = [], possible = 0 }) {
+export function Leaderboard({ rows, meKey, limit = 8, prizes = [], possible = 0, unit = '' }) {
   const prizeFor = (rank) => prizes.find((p) => p.place === rank)?.label;
   const shown = rows.slice(0, limit);
   const mine = meKey && !shown.some((r) => r.key === meKey) ? rows.find((r) => r.key === meKey) : null;
@@ -70,7 +70,7 @@ export function Leaderboard({ rows, meKey, limit = 8, prizes = [], possible = 0 
         {r.kind === 'team' && <span className="muted small"> team of {r.size}</span>}
         {prizeFor(r.rank) && r.score > 0 && <span className="prize">{prizeFor(r.rank)}</span>}
       </span>
-      <span className="score"><ScoreText score={r.score} possible={possible} /></span>
+      <span className="score"><ScoreText score={r.score} possible={possible} />{!possible && r.score != null && unit ? <small className="pct"> {unit}</small> : null}</span>
     </li>
   );
   return (
@@ -89,3 +89,8 @@ export function Waiting({ children }) {
     </div>
   );
 }
+
+// "marks" in a normal quiz, "correct" in a blitz
+export const unitOf = (state) => (state?.mode === 'blitz' ? 'correct' : 'marks');
+export const fmtClock = (secs) => `${Math.floor(secs / 60)}:${String(Math.floor(secs % 60)).padStart(2, '0')}`;
+export const blitzLength = (secs) => (secs % 60 === 0 ? `${secs / 60} ${secs === 60 ? 'minute' : 'minutes'}` : `${secs} seconds`);

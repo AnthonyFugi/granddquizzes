@@ -7,9 +7,10 @@ const clean = (s, max) => String(s ?? '').replace(/\s+/g, ' ').trim().slice(0, m
 /**
  * One live quiz. Holds players, teams, the current question and scores in memory.
  * Status flow: lobby -> question -> (locked) -> reveal -> question ... -> ended
+ * Blitz mode: lobby -> blitz (everyone races the clock through their own shuffled copy of the questions) -> ended
  */
 export class GameSession {
-  constructor({ code, eventId, title, prizes = [], questions, timeLimit = 20, maxTeamSize = 10, maxPlayers = Infinity, branding = { poweredBy: true }, marks = DEFAULT_MARKS }) {
+  constructor({ code, eventId, title, prizes = [], questions, timeLimit = 20, maxTeamSize = 10, maxPlayers = Infinity, branding = { poweredBy: true }, marks = DEFAULT_MARKS, mode = 'classic', blitzSeconds = 120 }) {
     this.code = code;
     this.eventId = eventId;
     this.title = title;
@@ -20,7 +21,10 @@ export class GameSession {
     this.maxPlayers = maxPlayers; // set from the plan; refreshed whenever the host opens the console
     this.branding = branding; // already filtered by plan: what guests are allowed to see
 
-    this.marks = cleanMarks(marks); // marks for every correct answer
+    this.mode = mode === 'blitz' ? 'blitz' : 'classic';
+    this.blitzSeconds = Math.min(900, Math.max(30, Number(blitzSeconds) || 120)); // length of a blitz round
+    this.onTimeUp = () => {}; // called when a blitz ends by itself
+    this.marks = this.mode === 'blitz' ? 1 : cleanMarks(marks); // marks for every correct answer (blitz: one point per correct answer)
     this.scoredCount = 0; // questions revealed so far: the possible total grows by one question each time
     this.status = 'lobby';
     this.players = new Map(); // playerId -> { id, nickname, socketId, connected, teamId, score }
@@ -195,7 +199,13 @@ export class GameSession {
     return list;
   }
 
+  // Start the quiz in whichever mode it is
+  begin() {
+    return this.mode === 'blitz' ? this.startBlitz() : this.next();
+  }
+
   next() {
+    if (this.mode === 'blitz') throw new UserError('This is a blitz quiz. Use Start blitz');
     if (!['lobby', 'reveal'].includes(this.status)) throw new UserError('Finish the current question first');
     if (this.players.size === 0) throw new UserError('Wait for at least one player to join');
     if (this.index + 1 >= this.questions.length) {
@@ -216,6 +226,90 @@ export class GameSession {
       }
     }, this.timeLimit * 1000 + 50);
     this.touch();
+  }
+
+  // ---------- blitz mode ----------
+  startBlitz() {
+    if (this.mode !== 'blitz') throw new UserError('This is not a blitz quiz');
+    if (this.status !== 'lobby') throw new UserError('The blitz has already started');
+    if (this.players.size === 0) throw new UserError('Wait for at least one player to join');
+    this.startedAt = Date.now();
+    this.endsAt = this.startedAt + this.blitzSeconds * 1000;
+    this.status = 'blitz';
+    for (const p of this.players.values()) { p.order = null; this.prepBlitz(p); }
+    clearTimeout(this.timer);
+    this.timer = setTimeout(() => {
+      if (this.status === 'blitz') {
+        this.end();
+        this.onTimeUp();
+        this.onChange();
+      }
+    }, this.blitzSeconds * 1000 + 100);
+    this.touch();
+  }
+
+  // Everyone gets the same questions in their own random order, so neighbours cannot copy
+  prepBlitz(p) {
+    if (p.order) return;
+    const order = this.questions.map((_, i) => i);
+    for (let i = order.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [order[i], order[j]] = [order[j], order[i]];
+    }
+    p.order = order;
+    p.pos = 0;
+    p.correct = p.correct || 0;
+    p.wrong = p.wrong || 0;
+    p.skipped = p.skipped || 0;
+    p.qStart = Date.now();
+  }
+
+  /** choice: option index, or -1 to skip. Returns what the player needs to see next. */
+  blitzAnswer(playerId, choice) {
+    const p = this.mustPlayer(playerId);
+    if (this.status !== 'blitz') throw new UserError('The blitz is not running');
+    const now = Date.now();
+    if (now > this.endsAt + 400) throw new UserError('Time is up');
+    this.prepBlitz(p);
+    if (p.pos >= p.order.length) throw new UserError('You have answered every question');
+    const q = this.questions[p.order[p.pos]];
+    const c = Number(choice);
+    let correct = false;
+    if (c === -1) {
+      p.skipped += 1;
+    } else {
+      if (!Number.isInteger(c) || c < 0 || c >= q.options.length) throw new UserError('Pick one of the options');
+      correct = c === q.correctIndex;
+      if (correct) {
+        p.correct += 1;
+        p.timeMs = (p.timeMs || 0) + Math.min(now - p.qStart, 120000);
+      } else {
+        p.wrong += 1;
+      }
+    }
+    p.score = p.correct;
+    p.pos += 1;
+    p.qStart = now;
+    this.touch();
+    return { skipped: c === -1, correct, correctIndex: q.correctIndex, blitz: this.blitzView(p) };
+  }
+
+  // What one player sees: their own question and tallies. Never includes the answer.
+  blitzView(p) {
+    if (this.mode !== 'blitz') return null;
+    if (this.status === 'lobby') return { pos: 0, total: this.questions.length, correct: 0, wrong: 0, skipped: 0, done: false, endsAt: null, question: null };
+    this.prepBlitz(p);
+    const q = this.status === 'blitz' && p.pos < p.order.length ? this.questions[p.order[p.pos]] : null;
+    return {
+      pos: p.pos,
+      total: p.order.length,
+      correct: p.correct,
+      wrong: p.wrong,
+      skipped: p.skipped,
+      done: p.pos >= p.order.length,
+      endsAt: this.endsAt,
+      question: q ? { text: q.text, options: q.options, category: q.category } : null,
+    };
   }
 
   submit(playerId, choice) {
@@ -301,6 +395,7 @@ export class GameSession {
 
   // Marks available so far (questions already revealed) and for the whole quiz
   possibleScore() {
+    if (this.mode === 'blitz') return 0; // blitz is scored by the number of correct answers, with no fixed total
     return this.scoredCount * this.marks;
   }
 
@@ -343,25 +438,37 @@ export class GameSession {
     this.revealAt = null;
     this.autoGo = null;
     for (const t of this.teams.values()) { t.score = 0; t.timeMs = 0; }
-    for (const p of this.players.values()) { p.score = 0; p.timeMs = 0; }
+    for (const p of this.players.values()) { p.score = 0; p.timeMs = 0; p.order = null; p.pos = 0; p.correct = 0; p.wrong = 0; p.skipped = 0; }
     this.touch();
   }
 
   // ---------- views ----------
   standings() {
     const rows = [];
-    for (const t of this.teams.values()) {
-      rows.push({ key: `t:${t.id}`, kind: 'team', id: t.id, name: t.name, score: t.score, timeMs: t.timeMs || 0, size: t.memberIds.size });
+    if (this.mode === 'blitz') {
+      // A team's score is the total correct answers of its members; ties go to fewer wrong answers, then faster correct answers
+      for (const t of this.teams.values()) {
+        const ms = [...t.memberIds].map((id) => this.players.get(id)).filter(Boolean);
+        rows.push({ key: `t:${t.id}`, kind: 'team', id: t.id, name: t.name, score: ms.reduce((a, m) => a + (m.correct || 0), 0), wrong: ms.reduce((a, m) => a + (m.wrong || 0), 0), timeMs: ms.reduce((a, m) => a + (m.timeMs || 0), 0), size: t.memberIds.size });
+      }
+      for (const p of this.players.values()) {
+        if (!p.teamId) rows.push({ key: `p:${p.id}`, kind: 'solo', id: p.id, name: p.nickname, score: p.correct || 0, wrong: p.wrong || 0, timeMs: p.timeMs || 0, size: 1 });
+      }
+      rows.sort((a, b) => b.score - a.score || a.wrong - b.wrong || a.timeMs - b.timeMs || a.name.localeCompare(b.name));
+    } else {
+      for (const t of this.teams.values()) {
+        rows.push({ key: `t:${t.id}`, kind: 'team', id: t.id, name: t.name, score: t.score, timeMs: t.timeMs || 0, size: t.memberIds.size });
+      }
+      for (const p of this.players.values()) {
+        if (!p.teamId) rows.push({ key: `p:${p.id}`, kind: 'solo', id: p.id, name: p.nickname, score: p.score, timeMs: p.timeMs || 0, size: 1 });
+      }
+      // Same marks: the one who answered correctly faster in total ranks higher. Equal on both = same place.
+      rows.sort((a, b) => b.score - a.score || a.timeMs - b.timeMs || a.name.localeCompare(b.name));
     }
-    for (const p of this.players.values()) {
-      if (!p.teamId) rows.push({ key: `p:${p.id}`, kind: 'solo', id: p.id, name: p.nickname, score: p.score, timeMs: p.timeMs || 0, size: 1 });
-    }
-    // Same marks: the one who answered correctly faster in total ranks higher. Equal on both = same place.
-    rows.sort((a, b) => b.score - a.score || a.timeMs - b.timeMs || a.name.localeCompare(b.name));
     let rank = 0;
     let prev = null;
     rows.forEach((r, i) => {
-      const sig = `${r.score}:${r.timeMs}`;
+      const sig = `${r.score}:${r.wrong ?? ''}:${r.timeMs}`;
       if (sig !== prev) {
         rank = i + 1;
         prev = sig;
@@ -422,6 +529,8 @@ export class GameSession {
       answeredCount: this.answers.size,
       expectedCount: this.expectedCount(),
       totalQuestions: this.questions.length,
+      mode: this.mode,
+      blitz: this.mode === 'blitz' ? { seconds: this.blitzSeconds, startedAt: this.startedAt, endsAt: this.endsAt } : null,
       marks: this.marks, // marks per correct answer
       possible: this.possibleScore(), // marks available so far
       maxPossible: this.questions.length * this.marks,
@@ -431,7 +540,7 @@ export class GameSession {
     if (this.status === 'reveal' && q) {
       state.reveal = { correctIndex: q.correctIndex, explanation: q.explanation || '', tally: this.tally };
     }
-    if (this.status === 'reveal') state.leaderboard = standings;
+    if (this.status === 'reveal' || this.status === 'blitz') state.leaderboard = standings;
     if (this.status === 'ended') {
       state.leaderboard = this.finalStandings || standings;
       state.winners = this.winners(state.leaderboard);
@@ -469,6 +578,7 @@ export class GameSession {
       result: this.status === 'reveal' ? this.results.get(key) || null : null,
       score: row ? row.score : 0,
       possible: this.possibleScore(),
+      blitz: this.blitzView(p),
       rank: row ? row.rank : null,
       of: standings.length,
     };

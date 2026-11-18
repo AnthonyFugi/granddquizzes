@@ -6,9 +6,11 @@ const eventSchema = new mongoose.Schema(
     joinCode: { type: String, required: true, unique: true, uppercase: true },
     host: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
     categories: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Category' }],
-    questionCount: { type: Number, default: 10, min: 3, max: 100 },
+    mode: { type: String, enum: ['classic', 'blitz'], default: 'classic' }, // blitz: race the clock, score = correct answers
+    blitzSeconds: { type: Number, default: 120, min: 30, max: 900 },
+    questionCount: { type: Number, default: 10, min: 3, max: 300 },
     timeLimit: { type: Number, default: 20, min: 5, max: 120 },
-    difficulty: { type: String, enum: ['mixed', 'challenging', 'easy', 'medium', 'hard'], default: 'challenging' },
+    difficulty: { type: String, enum: ['mixed', 'challenging', 'easy', 'medium', 'hard'], default: 'hard' },
     marks: { type: Number, default: 10, min: 1, max: 100 }, // marks for every correct answer
     rounds: { type: Boolean, default: true }, // with several categories: play one category at a time
     possible: Number, // total marks that were available when the quiz ended
