@@ -36,6 +36,7 @@ export function SignIn({ user, title = 'Quiz master sign in' }) {
         <div className="field"><label htmlFor="pw">Password</label><input id="pw" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required /></div>
         {err && <p className="error" role="alert">{err}</p>}
         <button className="btn" disabled={busy}>Sign in</button>
+        <p style={{ marginTop: 14 }}><Link to="/host/forgot">Forgot your password?</Link></p>
       </form>
       {title === 'Quiz master sign in' && <p style={{ marginTop: 18 }}>New here? <Link to="/host/signup">Request a quiz master account</Link>. FugiPay approves each new account.</p>}
     </div>

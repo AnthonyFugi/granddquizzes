@@ -73,6 +73,7 @@ export default function Register() {
               {mode === 'register' && <div className="field"><label htmlFor="rp">Phone (optional)</label><input id="rp" type="tel" value={f.phone} onChange={set('phone')} /></div>}
               <div className="field"><label htmlFor="rw">Password (8 or more characters)</label><input id="rw" type="password" autoComplete={mode === 'register' ? 'new-password' : 'current-password'} value={f.password} onChange={set('password')} required /></div>
               <button className="btn">{mode === 'register' ? 'Create account' : 'Sign in'}</button>
+              {mode === 'login' && <p style={{ marginTop: 14 }}><Link to="/host/forgot">Forgot your password?</Link></p>}
             </form>
           ) : (
             <form onSubmit={signUp}>

@@ -12,6 +12,7 @@ import HostSignup from './pages/HostSignup.jsx';
 import Poster from './pages/Poster.jsx';
 import Contact from './pages/Contact.jsx';
 import AdminMessages from './pages/AdminMessages.jsx';
+import { ForgotPassword, ResetPassword } from './pages/Recover.jsx';
 import Shell from './components/Shell.jsx';
 
 export default function App() {
@@ -22,6 +23,8 @@ export default function App() {
       <Route path="/screen/:code" element={<Screen />} />
       <Route path="/register" element={<Register />} />
       <Route path="/host" element={<Host />} />
+      <Route path="/host/forgot" element={<ForgotPassword />} />
+      <Route path="/reset/:token" element={<ResetPassword />} />
       <Route path="/host/signup" element={<HostSignup />} />
       <Route path="/host/billing" element={<Billing />} />
       <Route path="/host/:eventId" element={<HostConsole />} />

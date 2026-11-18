@@ -7,6 +7,9 @@ const userSchema = new mongoose.Schema(
     email: { type: String, required: true, unique: true, lowercase: true, trim: true },
     phone: { type: String, trim: true, default: '' },
     passwordHash: { type: String, required: true },
+    // Password recovery: only a hash of the emailed token is stored, and it expires after an hour
+    resetHash: { type: String, select: false },
+    resetExpires: { type: Date, select: false },
     role: { type: String, enum: ['admin', 'host', 'player'], default: 'player' },
     active: { type: Boolean, default: true }, // an admin can switch an account off
     // Quiz masters who sign themselves up wait here until an admin approves them. Existing and admin-made accounts are approved.

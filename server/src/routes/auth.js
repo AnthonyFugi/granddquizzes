@@ -6,7 +6,8 @@ import { wrap } from '../middleware/errors.js';
 import { UserError } from '../services/errors.js';
 import { config } from '../config/env.js';
 import { rateLimit } from '../middleware/rateLimit.js';
-import { notify, adminAddress } from '../services/mailer.js';
+import { notify, adminAddress, mailEnabled } from '../services/mailer.js';
+import { newResetToken, hashToken, RESET_MINUTES } from '../services/passwordReset.js';
 
 const router = Router();
 const limit = rateLimit({ max: 40 });
@@ -63,6 +64,49 @@ router.post(
     if (user.status === 'rejected') throw new UserError('This account was not approved. Contact FugiPay', 403);
     if (user.active === false) throw new UserError('This account has been switched off. Contact FugiPay', 403);
     res.json({ token: signToken(user), user: user.toSafe() });
+  })
+);
+
+// Forgot password: always answers the same way, so nobody can use it to find out who has an account
+const recoverLimit = rateLimit({ max: 6, message: 'Too many requests. Wait a few minutes and try again' });
+router.post(
+  '/forgot',
+  recoverLimit,
+  wrap(async (req, res) => {
+    const email = String(req.body.email || '').trim().toLowerCase();
+    if (!emailOk(email)) throw new UserError('Enter the email address of your account');
+    const user = await User.findOne({ email });
+    if (user && user.active !== false) {
+      const { token, hash, expires } = newResetToken();
+      user.resetHash = hash;
+      user.resetExpires = expires;
+      await user.save();
+      const base = config.clientPublicUrl || 'https://granddquiz.web.app';
+      const link = `${base}/reset/${token}`;
+      if (!mailEnabled() && !config.isProd) console.log('Password reset link (email is not set up):', link);
+      notify({
+        to: user.email,
+        subject: 'Reset your Granddquiz password',
+        text: `Hello ${user.name},\n\nSomeone asked to reset the password for your Granddquiz account. Use this link within ${RESET_MINUTES} minutes:\n\n${link}\n\nIf it was not you, ignore this email. Your password stays the same.\n\nFugiPay Technology Limited\nbusiness@fugipay.com`,
+      });
+    }
+    res.json({ ok: true, message: 'If an account with that email exists, we have sent a link to reset the password. It works for one hour.' });
+  })
+);
+
+router.post(
+  '/reset',
+  recoverLimit,
+  wrap(async (req, res) => {
+    const password = String(req.body.password || '');
+    if (password.length < 8) throw new UserError('Password must be at least 8 characters');
+    const user = await User.findOne({ resetHash: hashToken(req.body.token), resetExpires: { $gt: new Date() } }).select('+resetHash +resetExpires');
+    if (!user) throw new UserError('This reset link has expired or was already used. Ask for a new one', 400);
+    user.passwordHash = await bcrypt.hash(password, 10);
+    user.resetHash = undefined;
+    user.resetExpires = undefined;
+    await user.save();
+    res.json({ ok: true, message: 'Your password has been changed. You can sign in now.' });
   })
 );
 
